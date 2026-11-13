@@ -2,6 +2,23 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { API_URL } from '../config';
 
+// Where a check-in / check-out happened (saved when the browser shares the location)
+export interface Place {
+  lat: number;
+  lng: number;
+  accuracy?: number;
+  distanceM?: number;
+  siteName?: string;
+}
+
+export interface Session {
+  in: string;
+  out?: string;
+  inLocation?: Place;
+  outLocation?: Place;
+  inMethod?: 'button' | 'qr' | 'admin';
+}
+
 export interface AttendanceRecord {
   _id: string;
   date: string;
@@ -10,6 +27,8 @@ export interface AttendanceRecord {
   status: 'present' | 'late' | 'absent' | 'leave';
   workedMinutes: number;
   note?: string;
+  // every check-in / check-out pair of the day; the last one has no `out` while the person is still in
+  sessions?: Session[];
   inMethod?: 'button' | 'qr';
   inLocation?: { lat: number; lng: number; distanceM?: number };
   user?: { _id: string; name: string; email: string; department?: string; employeeId?: string };
@@ -24,6 +43,8 @@ export interface Summary {
   notIn: number;
 }
 
+export type PayType = 'monthly' | 'daily' | 'hourly';
+
 export interface StaffMember {
   _id: string;
   name: string;
@@ -32,11 +53,14 @@ export interface StaffMember {
   department?: string;
   employeeId?: string;
   active: boolean;
-  baseSalary?: number;
+  payType?: PayType;
+  baseSalary?: number; // monthly salary, rate per day or rate per hour, depending on payType
   joinDate?: string;
   shift?: string | null;
   locations?: string[];
   anyLocation?: boolean;
+  hasDevice?: boolean;
+  deviceLock?: boolean;
 }
 
 export interface WorkLocation {
@@ -61,7 +85,11 @@ export interface PayrollRow {
   name: string;
   employeeId: string;
   department: string;
-  baseSalary: number;
+  payType: PayType;
+  rate: number;
+  baseSalary: number; // pay earned before deductions
+  paidDays: number;
+  hours: number;
   workingDays: number;
   worked: number;
   paidLeave: number;
@@ -71,7 +99,20 @@ export interface PayrollRow {
   lateDeductionDays: number;
   dailyRate: number;
   deduction: number;
+  additions: number;
+  otherDeductions: number;
+  adjustments: PayAdjustment[];
   netSalary: number;
+  shortfall: number;
+}
+
+export interface PayAdjustment {
+  id: string;
+  date: string; // the day it is for (empty on older entries)
+  type: 'earning' | 'deduction';
+  label: string;
+  amount: number;
+  note: string;
 }
 
 export interface AppSettings {
@@ -89,10 +130,15 @@ export interface AppSettings {
   lateCountThreshold: number;
   lateDeductionDays: number;
   salaryCurrency: string;
+  payrollStartDay: number;
+  payHoursPerDay: number;
 }
 
 export interface Payroll {
-  month: string;
+  month: string; // pay month (YYYY-MM) or, for custom dates, 'from..to'
+  from: string;
+  to: string;
+  custom: boolean;
   currency: string;
   totalWorkingDays: number;
   deductionFactor: number;
@@ -100,7 +146,7 @@ export interface Payroll {
   lateDays: number;
   inProgress: boolean;
   rows: PayrollRow[];
-  totals: { baseSalary: number; deduction: number; netSalary: number };
+  totals: { baseSalary: number; deduction: number; additions: number; otherDeductions: number; netSalary: number };
 }
 
 export interface Rules {
@@ -169,6 +215,7 @@ export class ApiService {
   // --- staff ---
   staff() { return this.http.get<StaffMember[]>(`${API_URL}/staff`); }
   addStaff(body: Partial<StaffMember> & { password: string }) { return this.http.post(`${API_URL}/staff`, body); }
+  resetDevice(id: string) { return this.http.post(`${API_URL}/staff/${id}/reset-device`, {}); }
   updateStaff(id: string, body: Partial<StaffMember> & { password?: string }) { return this.http.put(`${API_URL}/staff/${id}`, body); }
 
   // --- leave ---
@@ -183,9 +230,14 @@ export class ApiService {
   }
 
   // --- payroll (admin) ---
-  payroll(month: string) { return this.http.get<Payroll>(`${API_URL}/payroll`, { params: this.params({ month }) }); }
-  downloadPayroll(month: string) {
-    return this.http.get(`${API_URL}/payroll/export.xlsx`, { params: this.params({ month }), responseType: 'blob' });
+  // no argument = the current pay period; { month } = a pay month; { from, to } = custom dates
+  payroll(q: { month?: string; from?: string; to?: string } = {}) { return this.http.get<Payroll>(`${API_URL}/payroll`, { params: this.params(q) }); }
+  addAdjustment(body: { user: string; date: string; type: 'earning' | 'deduction'; label: string; amount: number; note: string }) {
+    return this.http.post(`${API_URL}/adjustments`, body);
+  }
+  deleteAdjustment(id: string) { return this.http.delete(`${API_URL}/adjustments/${id}`); }
+  downloadPayroll(q: { month?: string; from?: string; to?: string }) {
+    return this.http.get(`${API_URL}/payroll/export.xlsx`, { params: this.params(q), responseType: 'blob' });
   }
 
   // --- locations and shifts (admin) ---

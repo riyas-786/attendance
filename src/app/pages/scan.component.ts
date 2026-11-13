@@ -3,12 +3,14 @@ import { DatePipe } from '@angular/common';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { ApiService, AttendanceRecord, PresencePayload } from '../core/api.service';
 import { LocationService } from '../core/location.service';
+import { ShareDayComponent } from './share-day.component';
+import { preloadShareAssets } from '../core/share-image';
 
 // Opened when staff scan the office QR code with their phone camera: /scan?t=TOKEN
 @Component({
   selector: 'app-scan',
   standalone: true,
-  imports: [DatePipe, RouterLink],
+  imports: [DatePipe, RouterLink, ShareDayComponent],
   template: `
     <section class="card center">
       <h2>Office QR scan</h2>
@@ -18,13 +20,14 @@ import { LocationService } from '../core/location.service';
       @if (state() === 'done') {
         <div class="big-icon ok">✓</div>
         <p><strong>{{ action() === 'in' ? 'Checked in' : 'Checked out' }}</strong>
-          at {{ (action() === 'in' ? record()?.checkIn : record()?.checkOut) | date: 'HH:mm' }}</p>
-        @if (action() === 'in' && record()?.status === 'late') { <p class="muted">Marked as late.</p> }
-      }
-
-      @if (state() === 'already') {
-        <div class="big-icon ok">✓</div>
-        <p>You have already checked in and out today.</p>
+          at {{ when() | date: 'HH:mm' }}</p>
+        @if (action() === 'in' && record()?.status === 'late' && record()?.sessions?.length === 1) { <p class="muted">Marked as late.</p> }
+        @if (action() === 'out') { <p class="muted">Worked today: {{ hoursToday() }}</p> }
+        <div class="share-prompt">
+          <span class="muted">Send it to your WhatsApp group?</span>
+          <app-share-day [record]="record()" />
+        </div>
+        <p class="muted">Scan again later to {{ action() === 'in' ? 'check out' : 'check in again' }}.</p>
       }
 
       @if (state() === 'error') {
@@ -41,13 +44,26 @@ export class ScanComponent implements OnInit {
   private route = inject(ActivatedRoute);
   private loc = inject(LocationService);
 
-  state = signal<'working' | 'done' | 'already' | 'error'>('working');
+  state = signal<'working' | 'done' | 'error'>('working');
   text = signal('Getting your location…');
   error = signal('');
   action = signal<'in' | 'out'>('in');
   record = signal<AttendanceRecord | null>(null);
 
+  // time of the check-in / check-out that was just recorded (the latest session)
+  when() {
+    const s = this.record()?.sessions ?? [];
+    const last = s[s.length - 1];
+    return this.action() === 'in' ? last?.in : last?.out;
+  }
+
+  hoursToday() {
+    const m = this.record()?.workedMinutes ?? 0;
+    return `${Math.floor(m / 60)}h ${m % 60}m`;
+  }
+
   async ngOnInit() {
+    preloadShareAssets();
     const token = this.route.snapshot.queryParamMap.get('t');
     if (!token) {
       this.error.set('This link has no QR code token.');
@@ -57,9 +73,9 @@ export class ScanComponent implements OnInit {
 
     this.api.today().subscribe({
       next: async (today) => {
-        if (today?.checkIn && today.checkOut) return this.state.set('already');
-
-        const kind: 'in' | 'out' = today?.checkIn ? 'out' : 'in';
+        // scanning toggles: checked in right now -> check out, otherwise -> check in (any number of times a day)
+        const s = today?.sessions ?? [];
+        const kind: 'in' | 'out' = s.length > 0 && !s[s.length - 1].out ? 'out' : 'in';
         this.action.set(kind);
 
         const payload: PresencePayload = { qrToken: token };

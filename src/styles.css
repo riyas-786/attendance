@@ -87,3 +87,43 @@ code { background: #eef0f5; padding: 1px 5px; border-radius: 4px; font-size: 13p
 .login > .muted { text-align: center; }
 .nav-logo { width: 36px; height: 36px; display: block; }
 .nav strong { margin-left: -6px; }
+
+/* --- multiple check-ins per day --- */
+.status-line .badge { text-transform: none; }
+
+/* --- check-in locations --- */
+.detail > td { background: #f8f9fc; padding: 6px 12px 12px; }
+.inner { font-size: 13px; }
+.inner th, .inner td { border-bottom: 1px solid var(--line); }
+.place-ok { color: var(--ok); font-weight: 600; }
+.place-unknown { color: var(--warn); font-weight: 600; }
+.place-none { color: var(--muted); }
+.warn-dot { display: inline-block; width: 18px; height: 18px; line-height: 18px; text-align: center; border-radius: 50%; background: #fff1d9; color: var(--warn); font-size: 12px; font-weight: 700; margin-left: 6px; cursor: help; }
+.inner a { margin-left: 8px; }
+
+/* --- tighter header so the longer admin menu fits on one line --- */
+.nav { gap: 8px 12px; }
+.nav nav { gap: 2px; flex-wrap: wrap; }
+.nav a { padding: 6px 9px; font-size: 14px; }
+@media (max-width: 1100px) { .nav > .muted { display: none; } }
+
+/* payroll: extra earnings / deductions */
+.pos { color: #15803d; }
+.neg { color: #b91c1c; }
+.adj-row td { background: var(--bg-soft, #f8fafc); }
+.adj-box { padding: 6px 2px; }
+.adj-list { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 6px; }
+.adj-list li { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.adj-list .amt { margin-left: auto; font-weight: 600; }
+.adj-form { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; margin-top: 8px; }
+.adj-form label { display: grid; gap: 4px; font-size: 13px; }
+.adj-form label.wide { flex: 1 1 280px; }
+.adj-form label.wide input { width: 100%; }
+
+/* share to WhatsApp */
+.share-row { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 12px; }
+.btn.whatsapp { background: #25d366; border-color: #25d366; color: #fff; text-decoration: none; }
+.btn.whatsapp:hover { background: #1fb457; border-color: #1fb457; }
+.share-cell { white-space: nowrap; display: flex; gap: 6px; }
+.share-prompt { display: grid; gap: 8px; justify-items: center; margin: 14px 0; padding: 14px; border: 1px solid #bbf7d0; background: #f0fdf4; border-radius: 12px; }
+.share-prompt .share-row { justify-content: center; margin: 0; }

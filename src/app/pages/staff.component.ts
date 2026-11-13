@@ -1,7 +1,7 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { ApiService, Shift, StaffMember, WorkLocation } from '../core/api.service';
+import { ApiService, PayType, Shift, StaffMember, WorkLocation } from '../core/api.service';
 
 @Component({
   selector: 'app-staff',
@@ -12,7 +12,7 @@ import { ApiService, Shift, StaffMember, WorkLocation } from '../core/api.servic
       <h2>Staff</h2>
       <table>
         <thead>
-          <tr><th>Name</th><th>Dept</th><th>Role</th><th>Salary</th><th>Duty time</th><th>Check-in places</th><th>Status</th><th></th></tr>
+          <tr><th>Name</th><th>Dept</th><th>Role</th><th>Pay</th><th>Duty time</th><th>Check-in places</th><th>Phone</th><th>Status</th><th></th></tr>
         </thead>
         <tbody>
           @for (u of staff(); track u._id) {
@@ -20,9 +20,19 @@ import { ApiService, Shift, StaffMember, WorkLocation } from '../core/api.servic
               <td>{{ u.name }}<div class="muted">{{ u.email }}{{ u.employeeId ? ' · ' + u.employeeId : '' }}</div></td>
               <td>{{ u.department || '—' }}</td>
               <td>{{ u.role }}</td>
-              <td>{{ u.baseSalary ? (u.baseSalary | number: '1.2-2') : '—' }}</td>
+              <td>
+                @if (u.baseSalary) { {{ u.baseSalary | number: '1.2-2' }}<div class="muted">{{ payUnit(u.payType) }}</div> } @else { — }
+              </td>
               <td>{{ shiftLabel(u) }}</td>
               <td>{{ placesLabel(u) }}</td>
+              <td>
+                @if (u.role !== 'staff') { <span class="muted">—</span> }
+                @else if (u.deviceLock === false) { <span class="muted">Not locked</span> }
+                @else if (u.hasDevice) {
+                  <span class="badge present">Registered</span>
+                  <button class="btn small" (click)="resetDevice(u)">Reset</button>
+                } @else { <span class="muted">Not yet</span> }
+              </td>
               <td><span class="badge" [class]="u.active ? 'present' : 'absent'">{{ u.active ? 'active' : 'inactive' }}</span></td>
               <td>
                 <button class="btn small" (click)="startEdit(u)">Edit</button>
@@ -39,7 +49,14 @@ import { ApiService, Shift, StaffMember, WorkLocation } from '../core/api.servic
       <section class="card edit-card">
         <h3>Edit {{ u.name }}</h3>
         <div class="grid">
-          <label>Monthly salary <input type="number" min="0" step="0.01" [(ngModel)]="e.salary" name="esal" /></label>
+          <label>Paid by
+            <select [(ngModel)]="e.payType" name="epay">
+              <option value="monthly">Monthly salary</option>
+              <option value="daily">Per day worked</option>
+              <option value="hourly">Per hour worked</option>
+            </select>
+          </label>
+          <label>{{ payLabel(e.payType) }} <input type="number" min="0" step="0.01" [(ngModel)]="e.salary" name="esal" /></label>
           <label>Join date (optional) <input type="date" [(ngModel)]="e.joinDate" name="ejoin" /></label>
           <label>Duty time (shift)
             <select [(ngModel)]="e.shift" name="eshift">
@@ -47,6 +64,10 @@ import { ApiService, Shift, StaffMember, WorkLocation } from '../core/api.servic
               @for (s of shifts(); track s._id) { <option [value]="s._id">{{ s.name }} · starts {{ s.workStart }}</option> }
             </select>
           </label>
+        </div>
+
+        <div style="margin-top:12px">
+          <label class="check"><input type="checkbox" [(ngModel)]="e.deviceLock" name="edev" /> Lock to one phone or browser (stops someone else signing in as this person from their own phone)</label>
         </div>
 
         <div style="margin-top:12px">
@@ -83,7 +104,12 @@ import { ApiService, Shift, StaffMember, WorkLocation } from '../core/api.servic
         <input name="password" type="password" placeholder="Temporary password (min 6)" [(ngModel)]="form.password" required minlength="6" />
         <input name="employeeId" placeholder="Employee ID" [(ngModel)]="form.employeeId" />
         <input name="department" placeholder="Department" [(ngModel)]="form.department" />
-        <input name="baseSalary" type="number" min="0" step="0.01" placeholder="Monthly salary" [(ngModel)]="form.baseSalary" />
+        <select name="payType" [(ngModel)]="form.payType">
+          <option value="monthly">Paid monthly</option>
+          <option value="daily">Paid per day</option>
+          <option value="hourly">Paid per hour</option>
+        </select>
+        <input name="baseSalary" type="number" min="0" step="0.01" [placeholder]="payLabel(form.payType)" [(ngModel)]="form.baseSalary" />
         <label>Join date <input name="joinDate" type="date" [(ngModel)]="form.joinDate" /></label>
         <select name="role" [(ngModel)]="form.role">
           <option value="staff">Staff</option>
@@ -104,12 +130,12 @@ export class StaffComponent implements OnInit {
   msg = signal('');
   editMsg = signal('');
   editing = signal<StaffMember | null>(null);
-  e = { salary: 0 as number | null, joinDate: '', shift: '', anyLocation: false, locations: [] as string[] };
+  e = { payType: 'monthly' as PayType, salary: 0 as number | null, joinDate: '', shift: '', anyLocation: false, locations: [] as string[], deviceLock: true };
 
   private blank() {
     return {
       name: '', email: '', password: '', employeeId: '', department: '',
-      role: 'staff' as 'staff' | 'admin', baseSalary: null as number | null, joinDate: '',
+      role: 'staff' as 'staff' | 'admin', payType: 'monthly' as PayType, baseSalary: null as number | null, joinDate: '',
     };
   }
   form = this.blank();
@@ -149,11 +175,13 @@ export class StaffComponent implements OnInit {
     this.editMsg.set('');
     this.editing.set(u);
     this.e = {
+      payType: u.payType || 'monthly',
       salary: u.baseSalary ?? 0,
       joinDate: u.joinDate || '',
       shift: u.shift || '',
       anyLocation: !!u.anyLocation,
       locations: [...(u.locations || [])],
+      deviceLock: u.deviceLock !== false,
     };
   }
 
@@ -164,9 +192,11 @@ export class StaffComponent implements OnInit {
   saveEdit(u: StaffMember) {
     this.api
       .updateStaff(u._id, {
+        payType: this.e.payType,
         baseSalary: this.e.salary ?? 0,
         joinDate: this.e.joinDate,
         shift: this.e.shift || null,
+        deviceLock: this.e.deviceLock,
         anyLocation: this.e.anyLocation,
         locations: this.e.anyLocation ? [] : this.e.locations,
       })
@@ -174,6 +204,18 @@ export class StaffComponent implements OnInit {
         next: () => { this.editing.set(null); this.load(); },
         error: (err) => this.editMsg.set(err.error?.message || 'Could not save'),
       });
+  }
+
+  payLabel(t?: PayType) {
+    return t === 'daily' ? 'Rate per day' : t === 'hourly' ? 'Rate per hour' : 'Monthly salary';
+  }
+  payUnit(t?: PayType) {
+    return t === 'daily' ? 'per day' : t === 'hourly' ? 'per hour' : 'per month';
+  }
+
+  resetDevice(u: StaffMember) {
+    if (!confirm(`Reset the registered phone for ${u.name}? Their next sign-in will register a new phone or browser.`)) return;
+    this.api.resetDevice(u._id).subscribe(() => this.load());
   }
 
   toggle(u: StaffMember) {

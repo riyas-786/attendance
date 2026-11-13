@@ -3,11 +3,13 @@ import { DatePipe } from '@angular/common';
 import { ApiService, AttendanceRecord, PresencePayload, Rules } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
 import { LocationService } from '../core/location.service';
+import { preloadShareAssets } from '../core/share-image';
+import { ShareDayComponent } from './share-day.component';
 
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [DatePipe],
+  imports: [DatePipe, ShareDayComponent],
   template: `
     <section class="card center">
       <p class="muted">Welcome, {{ auth.user()?.name }}</p>
@@ -15,17 +17,17 @@ import { LocationService } from '../core/location.service';
       <div class="muted">{{ now() | date: 'EEEE, d MMMM y' }}</div>
 
       <div class="status-line">
-        @if (!record()?.checkIn) {
+        @if (sessions().length === 0) {
           <span class="badge" [class]="record()?.status === 'leave' ? 'leave' : ''">
             {{ record()?.status === 'leave' ? 'On approved leave today' : 'Not checked in' }}
           </span>
         }
-        @else if (!record()?.checkOut) {
-          <span class="badge" [class]="record()!.status">Checked in at {{ record()!.checkIn | date: 'HH:mm' }}
-            @if (record()!.status === 'late') { (late) }
+        @else if (isIn()) {
+          <span class="badge" [class]="record()!.status">Checked in at {{ sessions()[sessions().length - 1].in | date: 'HH:mm' }}
+            @if (record()!.status === 'late' && sessions().length === 1) { (late) }
           </span>
         } @else {
-          <span class="badge done">Done for today · {{ hours() }}</span>
+          <span class="badge done">Checked out at {{ sessions()[sessions().length - 1].out | date: 'HH:mm' }}</span>
         }
       </div>
 
@@ -35,13 +37,23 @@ import { LocationService } from '../core/location.service';
         </p>
       }
 
+      @if (prompt(); as p) {
+        <div class="share-prompt">
+          <strong>{{ p === 'in' ? 'You are checked in ✓' : 'You are checked out ✓' }}</strong>
+          <span class="muted">Send it to your WhatsApp group?</span>
+          <app-share-day [record]="record()" />
+          <button class="btn small" type="button" (click)="prompt.set('')">Not now</button>
+        </div>
+      }
+
       @if (rules()?.qrRequired) {
         <div class="notice">Your workplace requires scanning the office QR code. Scan it with your phone camera and sign in.</div>
       } @else {
         <div class="actions">
-          <button class="btn primary big" (click)="checkIn()" [disabled]="busy() || !!record()?.checkIn">Check in</button>
-          <button class="btn big" (click)="checkOut()" [disabled]="busy() || !record()?.checkIn || !!record()?.checkOut">Check out</button>
+          <button class="btn primary big" (click)="checkIn()" [disabled]="busy() || isIn()">Check in</button>
+          <button class="btn big" (click)="checkOut()" [disabled]="busy() || !isIn()">Check out</button>
         </div>
+        <p class="muted hint" style="margin-top:8px">You can check in and out as many times as you need during the day.</p>
         @if (rules()?.locationRequired) {
           <p class="muted hint">
             Your location is checked when you check in or out
@@ -54,6 +66,29 @@ import { LocationService } from '../core/location.service';
       @if (busy()) { <p class="muted">{{ busyText() }}</p> }
       @if (error()) { <div class="error">{{ error() }}</div> }
     </section>
+
+    @if (sessions().length) {
+      <section class="card">
+        <div class="row-between">
+          <h3>Today's check-ins</h3>
+          <strong>Total today: {{ fmt(totalMinutes()) }}</strong>
+        </div>
+        @if (!prompt()) { <app-share-day [record]="record()" /> }
+        <table>
+          <thead><tr><th>#</th><th>In</th><th>Out</th><th>Time</th></tr></thead>
+          <tbody>
+            @for (s of sessions(); track $index) {
+              <tr>
+                <td>{{ $index + 1 }}</td>
+                <td>{{ s.in | date: 'HH:mm' }}</td>
+                <td>{{ s.out ? (s.out | date: 'HH:mm') : 'still in' }}</td>
+                <td>{{ fmt(sessionMinutes(s)) }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </section>
+    }
   `,
 })
 export class DashboardComponent implements OnInit, OnDestroy {
@@ -67,14 +102,30 @@ export class DashboardComponent implements OnInit, OnDestroy {
   busy = signal(false);
   busyText = signal('');
   error = signal('');
+  // set right after a check-in / check-out so staff can send it to the WhatsApp group straight away
+  prompt = signal<'' | 'in' | 'out'>('');
   private timer?: ReturnType<typeof setInterval>;
 
-  hours = computed(() => {
-    const m = this.record()?.workedMinutes ?? 0;
-    return `${Math.floor(m / 60)}h ${m % 60}m`;
+  sessions = computed(() => this.record()?.sessions ?? []);
+  // checked in right now = the last session has no check-out yet
+  isIn = computed(() => {
+    const s = this.sessions();
+    return s.length > 0 && !s[s.length - 1].out;
   });
+  // all sessions added up; a session that is still running counts up to the current time
+  totalMinutes = computed(() => this.sessions().reduce((t, s) => t + this.sessionMinutes(s), 0));
+
+  sessionMinutes(s: { in: string; out?: string }) {
+    const end = s.out ? new Date(s.out).getTime() : this.now().getTime();
+    return Math.max(0, Math.round((end - new Date(s.in).getTime()) / 60000));
+  }
+
+  fmt(m: number) {
+    return `${Math.floor(m / 60)}h ${m % 60}m`;
+  }
 
   ngOnInit() {
+    preloadShareAssets();
     this.timer = setInterval(() => this.now.set(new Date()), 1000);
     this.api.today().subscribe((r) => this.record.set(r));
     this.api.rules().subscribe((r) => this.rules.set(r));
@@ -87,6 +138,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
   private async run(kind: 'in' | 'out') {
     this.busy.set(true);
     this.error.set('');
+    this.prompt.set('');
 
     const payload: PresencePayload = {};
     this.busyText.set('Getting your location…');
@@ -96,7 +148,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
     this.busyText.set(kind === 'in' ? 'Checking in…' : 'Checking out…');
     const obs = kind === 'in' ? this.api.checkIn(payload) : this.api.checkOut(payload);
     obs.subscribe({
-      next: (r) => { this.record.set(r); this.busy.set(false); },
+      next: (r) => { this.record.set(r); this.prompt.set(kind); this.busy.set(false); },
       error: (e) => { this.error.set(e.error?.message || 'Something went wrong'); this.busy.set(false); },
     });
   }

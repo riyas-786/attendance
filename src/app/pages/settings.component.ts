@@ -82,6 +82,12 @@ const DAYS = [
           <h2>Salary deductions</h2>
           <div class="grid">
             <label>Currency <input type="text" name="cur" maxlength="8" [(ngModel)]="v.salaryCurrency" required /></label>
+            <label>Pay period starts on day (1 = calendar month)
+              <input type="number" name="psd" min="1" max="28" step="1" [(ngModel)]="v.payrollStartDay" required />
+            </label>
+            <label>Hours in one paid day (hourly staff)
+              <input type="number" name="phd" min="1" max="24" step="0.5" [(ngModel)]="v.payHoursPerDay" required />
+            </label>
             <label>Days of pay deducted per absent day
               <input type="number" name="abs" min="0" max="10" step="0.25" [(ngModel)]="v.absentDeductionFactor" required />
             </label>
@@ -93,6 +99,11 @@ const DAYS = [
             </label>
           </div>
           <p class="muted">
+            @if (v.payrollStartDay > 1) {
+              Pay month runs from day {{ v.payrollStartDay }} of the previous month to day {{ v.payrollStartDay - 1 }} (for example 20 Oct to 19 Nov is the “November” payroll).
+            } @else {
+              Pay month is the calendar month (1st to last day).
+            }
             @if (v.lateCountThreshold > 0) {
               Example: every {{ v.lateCountThreshold }} late arrivals in a month deduct {{ v.lateDeductionDays }} day of pay.
             } @else {

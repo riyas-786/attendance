@@ -2,11 +2,14 @@ import { HttpErrorResponse, HttpInterceptorFn } from '@angular/common/http';
 import { inject } from '@angular/core';
 import { catchError, throwError } from 'rxjs';
 import { AuthService } from './auth.service';
+import { getDeviceId } from './device';
 
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
   const auth = inject(AuthService);
   const token = auth.token;
-  const authReq = token ? req.clone({ setHeaders: { Authorization: `Bearer ${token}` } }) : req;
+  const headers: Record<string, string> = { 'X-Device-Id': getDeviceId() };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const authReq = req.clone({ setHeaders: headers });
 
   return next(authReq).pipe(
     catchError((err: HttpErrorResponse) => {
