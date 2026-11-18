@@ -57,6 +57,15 @@ import { ApiService, PayType, Shift, StaffMember, WorkLocation } from '../core/a
             </select>
           </label>
           <label>{{ payLabel(e.payType) }} <input type="number" min="0" step="0.01" [(ngModel)]="e.salary" name="esal" /></label>
+          @if (e.payType === 'monthly') {
+            <label>Monthly pay method
+              <select [(ngModel)]="e.monthlyMethod" name="emethod">
+                <option value="">Use the default (Settings)</option>
+                <option value="fixed">Fixed salary</option>
+                <option value="days">By days present</option>
+              </select>
+            </label>
+          }
           <label>Join date (optional) <input type="date" [(ngModel)]="e.joinDate" name="ejoin" /></label>
           <label>Duty time (shift)
             <select [(ngModel)]="e.shift" name="eshift">
@@ -130,7 +139,7 @@ export class StaffComponent implements OnInit {
   msg = signal('');
   editMsg = signal('');
   editing = signal<StaffMember | null>(null);
-  e = { payType: 'monthly' as PayType, salary: 0 as number | null, joinDate: '', shift: '', anyLocation: false, locations: [] as string[], deviceLock: true };
+  e = { monthlyMethod: '' as '' | 'fixed' | 'days', payType: 'monthly' as PayType, salary: 0 as number | null, joinDate: '', shift: '', anyLocation: false, locations: [] as string[], deviceLock: true };
 
   private blank() {
     return {
@@ -175,6 +184,7 @@ export class StaffComponent implements OnInit {
     this.editMsg.set('');
     this.editing.set(u);
     this.e = {
+      monthlyMethod: u.monthlyMethod || '',
       payType: u.payType || 'monthly',
       salary: u.baseSalary ?? 0,
       joinDate: u.joinDate || '',
@@ -193,6 +203,7 @@ export class StaffComponent implements OnInit {
     this.api
       .updateStaff(u._id, {
         payType: this.e.payType,
+        monthlyMethod: this.e.monthlyMethod,
         baseSalary: this.e.salary ?? 0,
         joinDate: this.e.joinDate,
         shift: this.e.shift || null,

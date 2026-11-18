@@ -46,21 +46,16 @@ import { ShareDayComponent } from './share-day.component';
         </div>
       }
 
-      @if (rules()?.qrRequired) {
-        <div class="notice">Your workplace requires scanning the office QR code. Scan it with your phone camera and sign in.</div>
-      } @else {
-        <div class="actions">
-          <button class="btn primary big" (click)="checkIn()" [disabled]="busy() || isIn()">Check in</button>
-          <button class="btn big" (click)="checkOut()" [disabled]="busy() || !isIn()">Check out</button>
-        </div>
-        <p class="muted hint" style="margin-top:8px">You can check in and out as many times as you need during the day.</p>
-        @if (rules()?.locationRequired) {
-          <p class="muted hint">
-            Your location is checked when you check in or out
-            @if (rules()?.places?.length) { (allowed: {{ rules()!.places!.join(', ') }}) }.
-            Allow location access if your browser asks.
-          </p>
-        }
+      <div class="actions">
+        <button class="btn primary big" (click)="checkIn()" [disabled]="busy() || isIn()">Check in</button>
+        <button class="btn big" (click)="checkOut()" [disabled]="busy() || !isIn()">Check out</button>
+      </div>
+      <p class="muted hint" style="margin-top:8px">You can check in and out as many times as you need during the day.</p>
+      @if (rules()?.locationRequired) {
+        <p class="muted hint">
+          Your location is checked when you check in or out@if (rules()?.places?.length) { (allowed: {{ rules()!.places!.join(', ') }})}.
+          Allow location access if your browser asks.
+        </p>
       }
 
       @if (busy()) { <p class="muted">{{ busyText() }}</p> }

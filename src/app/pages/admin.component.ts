@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService, AttendanceRecord, Place, StaffMember, Summary } from '../core/api.service';
@@ -84,7 +84,18 @@ const today = () => {
                 </td>
               </tr>
             }
-          } @empty {
+          }
+          @for (u of notIn(); track u._id) {
+            <tr class="not-in">
+              <td>{{ u.name }}</td>
+              <td>{{ u.department || '—' }}</td>
+              <td>—</td>
+              <td>—</td>
+              <td><span class="badge">{{ date === todayKey ? 'Not in yet' : 'No record' }}</span></td>
+              <td></td>
+            </tr>
+          }
+          @if (!rows().length && !notIn().length) {
             <tr><td colspan="6" class="muted">No records for this date</td></tr>
           }
         </tbody>
@@ -104,7 +115,7 @@ const today = () => {
           <option value="absent">Absent (deducted from salary)</option>
         </select>
         <input type="text" placeholder="Note (optional)" [(ngModel)]="manualNote" />
-        <button class="btn primary" [disabled]="!manualUser" (click)="saveManual()">Save for {{ date }}</button>
+        <button class="btn primary" [disabled]="!manualUser || !date" (click)="saveManual()">Save for {{ date }}</button>
       </div>
       @if (msg()) { <div class="muted">{{ msg() }}</div> }
     </section>
@@ -113,9 +124,16 @@ const today = () => {
 export class AdminComponent implements OnInit {
   private api = inject(ApiService);
   date = today();
+  todayKey = today();
   rows = signal<AttendanceRecord[]>([]);
   summary = signal<Summary | null>(null);
   staff = signal<StaffMember[]>([]);
+  // active staff with no record on the chosen day, so the "Not in" number can be matched to names (not for future days)
+  notIn = computed(() => {
+    if (!this.date || this.date > this.todayKey) return [];
+    const have = new Set(this.rows().map((r) => r.user?._id));
+    return this.staff().filter((u) => !have.has(u._id));
+  });
   msg = signal('');
   // rows whose locations are expanded (several can be open at once)
   openIds = signal<string[]>([]);
@@ -158,11 +176,13 @@ export class AdminComponent implements OnInit {
   }
 
   load() {
+    if (!this.date) return;
     this.api.allAttendance({ date: this.date }).subscribe((r) => this.rows.set(r));
     this.api.summary(this.date).subscribe((s) => this.summary.set(s));
   }
 
   saveManual() {
+    if (!this.date) { this.msg.set('Choose a date first'); return; }
     this.api
       .manual({
         userId: this.manualUser,

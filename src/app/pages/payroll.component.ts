@@ -1,7 +1,7 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { ApiService, Payroll } from '../core/api.service';
+import { ApiService, Payroll, PayrollQuery, Shift, StaffMember } from '../core/api.service';
 
 const fmt = (iso: string) =>
   new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
@@ -27,8 +27,44 @@ const fmt = (iso: string) =>
             <label>From <input type="date" [(ngModel)]="from" (change)="load()" /></label>
             <label>To <input type="date" [(ngModel)]="to" (change)="load()" /></label>
           }
-          <button class="btn primary" [disabled]="busy() || !data()" (click)="download()">Download Excel</button>
         </div>
+      </div>
+
+      <div class="filters">
+        <label>Employee
+          <select [(ngModel)]="userId" (change)="load()">
+            <option value="">All employees</option>
+            @for (u of staff(); track u._id) { <option [value]="u._id">{{ u.name }}{{ u.employeeId ? ' (' + u.employeeId + ')' : '' }}</option> }
+          </select>
+        </label>
+        <label>Department
+          <select [(ngModel)]="department" (change)="load()">
+            <option value="">All departments</option>
+            @for (d of departments(); track d) { <option [value]="d">{{ d }}</option> }
+          </select>
+        </label>
+        <label>Shift
+          <select [(ngModel)]="shift" (change)="load()">
+            <option value="">All shifts</option>
+            @for (s of shifts(); track s._id) { <option [value]="s._id">{{ s.name }} ({{ s.workStart }})</option> }
+          </select>
+        </label>
+        <label>Paid by
+          <select [(ngModel)]="payType" (change)="load()">
+            <option value="">All</option>
+            <option value="monthly">Monthly salary</option>
+            <option value="daily">Per day</option>
+            <option value="hourly">Per hour</option>
+          </select>
+        </label>
+        @if (hasFilters()) { <button class="btn" (click)="clearFilters()">Clear filters</button> }
+      </div>
+
+      <div class="actions left">
+        <button class="btn primary" [disabled]="busy() || !data()" (click)="download('xlsx')">Download salary sheet (Excel)</button>
+        <button class="btn" [disabled]="busy() || !data()" (click)="download('csv')">Download CSV</button>
+        <button class="btn" [disabled]="busy() || !data()" (click)="slips()">Download salary slips (Excel)</button>
+        @if (data(); as d) { <span class="muted">{{ d.rows.length }} employee{{ d.rows.length === 1 ? '' : 's' }}{{ hasFilters() ? ' (filtered)' : '' }} · the downloads match what is shown</span> }
       </div>
 
       @if (data(); as d) {
@@ -36,6 +72,9 @@ const fmt = (iso: string) =>
         @if (d.inProgress) {
           <div class="notice">This period is still running. Absences are counted up to yesterday, so the figures can still change.</div>
         }
+        <p class="muted">
+          Monthly staff paid "by days present": salary ÷ {{ d.totalWorkingDays }} working days × days present (paid leave counts as present).
+        </p>
         <p class="muted">
           Monthly staff: {{ d.totalWorkingDays }} working days in the period (weekends and holidays excluded) ·
           each absent day deducts {{ d.deductionFactor }} day of pay · unpaid leave deducts 1 day · paid leave is not deducted ·
@@ -47,7 +86,7 @@ const fmt = (iso: string) =>
         </p>
 
         <div style="overflow-x:auto">
-        <table>
+        <table class="pay">
           <thead>
             <tr>
               <th>Name</th><th>Basic pay ({{ d.currency }})</th><th>Worked</th><th>Leave</th>
@@ -62,6 +101,7 @@ const fmt = (iso: string) =>
                 <td>
                   {{ r.baseSalary | number: '1.2-2' }}
                   @if (r.payType === 'daily') { <div class="muted">{{ r.paidDays }} days × {{ r.rate | number: '1.0-2' }}</div> }
+                  @else if (r.payMethod === 'days') { <div class="muted">{{ r.paidDays }} days × {{ r.dailyRate | number: '1.2-2' }}</div> }
                   @else if (r.payType === 'hourly') {
                     <div class="muted">{{ r.hours | number: '1.0-2' }} h × {{ r.rate | number: '1.0-2' }}@if (r.paidLeave) { + {{ r.paidLeave }} leave }</div>
                   }
@@ -69,7 +109,7 @@ const fmt = (iso: string) =>
                 </td>
                 <td>
                   @if (r.payType === 'monthly') { {{ r.worked }} / {{ r.workingDays }} } @else { {{ r.worked }} days }
-                  @if (r.payType !== 'monthly') { <div class="muted">{{ r.payType === 'daily' ? 'paid per day' : 'paid per hour' }}</div> }
+                  @if (r.payType !== 'monthly') { <div class="muted">{{ r.payType === 'daily' ? 'per day' : 'per hour' }}</div> }
                 </td>
                 <td>
                   {{ r.paidLeave + r.unpaidLeave || '—' }}
@@ -186,17 +226,40 @@ export class PayrollComponent implements OnInit {
   error = signal('');
   busy = signal(false);
   openId = signal('');
+  staff = signal<StaffMember[]>([]);
+  shifts = signal<Shift[]>([]);
+  userId = '';
+  department = '';
+  shift = '';
+  payType = '';
+  departments = computed(() => [...new Set(this.staff().map((u) => u.department).filter((d): d is string => !!d))].sort());
   formError = signal('');
   form = { date: '', type: 'earning' as 'earning' | 'deduction', label: '', amount: null as number | null, note: '' };
   earningNames = ['Overtime', 'Incentive', 'Bonus', 'Allowance', 'Commission'];
   deductionNames = ['Advance', 'Loan repayment', 'Fine', 'Damage recovery'];
 
-  ngOnInit() { this.load(); }
+  ngOnInit() {
+    this.api.staff().subscribe((s) => this.staff.set(s.filter((u) => u.role === 'staff' && u.active)));
+    this.api.shifts().subscribe((s) => this.shifts.set(s));
+    this.load();
+  }
+
+  hasFilters() { return !!(this.userId || this.department || this.shift || this.payType); }
+
+  clearFilters() {
+    this.userId = this.department = this.shift = this.payType = '';
+    this.load();
+  }
+
+  private filters(): PayrollQuery {
+    return { userId: this.userId, department: this.department, shift: this.shift, payType: this.payType };
+  }
 
   // the same query is used for the table, the Excel file and the extra items
-  private query(): { month?: string; from?: string; to?: string } | null {
-    if (this.mode === 'custom') return this.from && this.to ? { from: this.from, to: this.to } : null;
-    return this.month ? { month: this.month } : this.data() ? null : {}; // {} on first load = current period
+  private query(): PayrollQuery | null {
+    const f = this.filters();
+    if (this.mode === 'custom') return this.from && this.to ? { from: this.from, to: this.to, ...f } : null;
+    return this.month ? { month: this.month, ...f } : this.data() ? null : { ...f }; // no month on first load = current period
   }
 
   load() {
@@ -261,14 +324,37 @@ export class PayrollComponent implements OnInit {
     });
   }
 
-  download() {
+  // one printable slip per employee shown (one sheet each)
+  slips() {
+    const q = this.query();
+    if (!q) return;
     this.busy.set(true);
-    this.api.downloadPayroll(this.query() || {}).subscribe({
+    this.api.downloadSlips(q).subscribe({
       next: (blob) => {
+        const d = this.data();
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `payroll_${this.data()?.custom ? this.data()!.from + '_to_' + this.data()!.to : this.data()?.month}.xlsx`;
+        a.download = `salary_slips_${d?.custom ? d.from + '_to_' + d.to : d?.month}.xlsx`;
+        a.click();
+        URL.revokeObjectURL(url);
+        this.busy.set(false);
+      },
+      error: () => { this.error.set('Could not download the salary slips'); this.busy.set(false); },
+    });
+  }
+
+  download(format: 'xlsx' | 'csv') {
+    const q = this.query();
+    if (!q) return;
+    this.busy.set(true);
+    this.api.downloadPayroll(q, format).subscribe({
+      next: (blob) => {
+        const d = this.data();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `payroll_${d?.custom ? d.from + '_to_' + d.to : d?.month}.${format}`;
         a.click();
         URL.revokeObjectURL(url);
         this.busy.set(false);

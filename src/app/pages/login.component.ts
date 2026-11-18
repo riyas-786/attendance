@@ -10,6 +10,7 @@ import { AuthService } from '../core/auth.service';
   template: `
     <div class="login-wrap">
       <form class="card login" (ngSubmit)="submit()">
+        <img class="login-mark" src="logo-mark.png" alt="Teepee Group" />
         <h1>Staff Attendance</h1>
         <p class="muted">Sign in to record your attendance</p>
 

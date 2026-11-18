@@ -46,18 +46,6 @@ const DAYS = [
         </section>
 
         <section class="card">
-          <h2>QR code</h2>
-          <div class="grid">
-            <label class="check"><input type="checkbox" name="reqqr" [(ngModel)]="v.requireQr" /> Staff must scan the QR code to check in or out</label>
-            <label>QR changes every (minutes) <input type="number" name="qrwin" min="1" max="60" [(ngModel)]="v.qrWindowMinutes" required /></label>
-            <label class="wide">App address the QR code opens
-              <input type="url" name="url" [(ngModel)]="v.frontendUrl" required placeholder="http://192.168.1.20:4200" />
-            </label>
-          </div>
-          <p class="muted">Use an address that staff phones can reach (not <code>localhost</code>).</p>
-        </section>
-
-        <section class="card">
           <h2>Weekends and holidays</h2>
           <p class="muted">Days off are not counted as working days in payroll.</p>
           <div class="days">
@@ -84,6 +72,12 @@ const DAYS = [
             <label>Currency <input type="text" name="cur" maxlength="8" [(ngModel)]="v.salaryCurrency" required /></label>
             <label>Pay period starts on day (1 = calendar month)
               <input type="number" name="psd" min="1" max="28" step="1" [(ngModel)]="v.payrollStartDay" required />
+            </label>
+            <label>Monthly staff are paid
+              <select name="mm" [(ngModel)]="v.monthlyMethod">
+                <option value="fixed">Fixed salary</option>
+                <option value="days">By days present</option>
+              </select>
             </label>
             <label>Hours in one paid day (hourly staff)
               <input type="number" name="phd" min="1" max="24" step="0.5" [(ngModel)]="v.payHoursPerDay" required />

@@ -29,7 +29,7 @@ export interface AttendanceRecord {
   note?: string;
   // every check-in / check-out pair of the day; the last one has no `out` while the person is still in
   sessions?: Session[];
-  inMethod?: 'button' | 'qr';
+  inMethod?: 'button' | 'qr'; // 'qr' only appears on older records
   inLocation?: { lat: number; lng: number; distanceM?: number };
   user?: { _id: string; name: string; email: string; department?: string; employeeId?: string };
 }
@@ -61,6 +61,7 @@ export interface StaffMember {
   anyLocation?: boolean;
   hasDevice?: boolean;
   deviceLock?: boolean;
+  monthlyMethod?: '' | 'fixed' | 'days'; // monthly staff: '' = use the Settings default
 }
 
 export interface WorkLocation {
@@ -70,6 +71,39 @@ export interface WorkLocation {
   lng: number;
   radiusMeters: number;
   staffCount?: number;
+}
+
+// Which payroll to show: a pay period (nothing = the current one, month, or from + to) and optional filters
+export interface PayrollQuery {
+  month?: string;
+  from?: string;
+  to?: string;
+  userId?: string;
+  department?: string;
+  shift?: string;
+  payType?: string; // monthly | daily | hourly
+}
+
+export interface ReportFilters {
+  from: string;
+  to: string;
+  userId?: string;
+  department?: string;
+  shift?: string;
+  status?: string; // comma list: present,late,leave,absent
+  place?: string; // a saved location name, or '__none__' for check-ins not at a saved place
+  includeAbsent?: string; // 'true' = also list working days with no record as absent
+}
+
+export interface ReportPreview {
+  from: string;
+  to: string;
+  total: number;
+  counts: { present: number; late: number; leave: number; absent: number };
+  hours: number;
+  columns: string[];
+  rows: string[][];
+  limit: number;
 }
 
 export interface Shift {
@@ -86,6 +120,7 @@ export interface PayrollRow {
   employeeId: string;
   department: string;
   payType: PayType;
+  payMethod?: '' | 'fixed' | 'days';
   rate: number;
   baseSalary: number; // pay earned before deductions
   paidDays: number;
@@ -121,9 +156,6 @@ export interface AppSettings {
   officeLat: number | null;
   officeLng: number | null;
   officeRadiusMeters: number;
-  requireQr: boolean;
-  qrWindowMinutes: number;
-  frontendUrl: string;
   weekendDays: number[];
   holidays: string[];
   absentDeductionFactor: number;
@@ -132,6 +164,7 @@ export interface AppSettings {
   salaryCurrency: string;
   payrollStartDay: number;
   payHoursPerDay: number;
+  monthlyMethod: 'fixed' | 'days';
 }
 
 export interface Payroll {
@@ -151,7 +184,6 @@ export interface Payroll {
 
 export interface Rules {
   locationRequired: boolean;
-  qrRequired: boolean;
   workStart?: string;
   graceMinutes?: number;
   shiftName?: string;
@@ -163,7 +195,6 @@ export interface PresencePayload {
   lat?: number;
   lng?: number;
   accuracy?: number;
-  qrToken?: string;
 }
 
 export type LeaveType = 'annual' | 'sick' | 'unpaid' | 'other';
@@ -205,12 +236,13 @@ export class ApiService {
   }
 
   // --- reports (file download through the authenticated client) ---
-  downloadReport(format: 'csv' | 'xlsx', from: string, to: string) {
+  downloadReport(format: 'csv' | 'xlsx', f: ReportFilters) {
     return this.http.get(`${API_URL}/attendance/export.${format}`, {
-      params: this.params({ from, to }),
+      params: this.params({ ...f }),
       responseType: 'blob',
     });
   }
+  reportPreview(f: ReportFilters) { return this.http.get<ReportPreview>(`${API_URL}/attendance/report`, { params: this.params({ ...f }) }); }
 
   // --- staff ---
   staff() { return this.http.get<StaffMember[]>(`${API_URL}/staff`); }
@@ -231,13 +263,17 @@ export class ApiService {
 
   // --- payroll (admin) ---
   // no argument = the current pay period; { month } = a pay month; { from, to } = custom dates
-  payroll(q: { month?: string; from?: string; to?: string } = {}) { return this.http.get<Payroll>(`${API_URL}/payroll`, { params: this.params(q) }); }
+  payroll(q: PayrollQuery = {}) { return this.http.get<Payroll>(`${API_URL}/payroll`, { params: this.params({ ...q }) }); }
   addAdjustment(body: { user: string; date: string; type: 'earning' | 'deduction'; label: string; amount: number; note: string }) {
     return this.http.post(`${API_URL}/adjustments`, body);
   }
   deleteAdjustment(id: string) { return this.http.delete(`${API_URL}/adjustments/${id}`); }
-  downloadPayroll(q: { month?: string; from?: string; to?: string }) {
-    return this.http.get(`${API_URL}/payroll/export.xlsx`, { params: this.params(q), responseType: 'blob' });
+  downloadPayroll(q: PayrollQuery, format: 'xlsx' | 'csv' = 'xlsx') {
+    return this.http.get(`${API_URL}/payroll/export.${format}`, { params: this.params({ ...q }), responseType: 'blob' });
+  }
+
+  downloadSlips(q: PayrollQuery) {
+    return this.http.get(`${API_URL}/payroll/slips.xlsx`, { params: this.params({ ...q }), responseType: 'blob' });
   }
 
   // --- locations and shifts (admin) ---
@@ -255,8 +291,6 @@ export class ApiService {
   settings() { return this.http.get<AppSettings>(`${API_URL}/settings`); }
   saveSettings(body: AppSettings) { return this.http.put<AppSettings>(`${API_URL}/settings`, body); }
 
-  // --- QR (admin) ---
-  currentQr() { return this.http.get<{ image: string; url: string; secondsLeft: number }>(`${API_URL}/qr/current`); }
 
   private params(obj: Record<string, string | undefined>) {
     let p = new HttpParams();

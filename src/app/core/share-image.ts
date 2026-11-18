@@ -1,5 +1,5 @@
 import { COMPANY_NAME } from '../config';
-import { DayLike, dateText, hm, minutesOf, statusText, time } from './share';
+import { DayLike, dateText, hm, latestEvent, minutesOf, statusText, time } from './share';
 
 // Draws the attendance as a picture (PNG) that staff can send to WhatsApp.
 // Only place NAMES are drawn, never GPS coordinates.
@@ -104,12 +104,10 @@ const toBlob = (canvas: HTMLCanvasElement) =>
     canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Could not create the image'))), 'image/png')
   );
 
-/** One day: every check-in / check-out with place names and the total. */
+/** One day, kept short: the latest check-in or check-out with its time and place. */
 export async function dayImage(name: string, day: DayLike, nowMs = Date.now()): Promise<Blob> {
-  const sessions = day.sessions ?? [];
-  const ROW = 44;
-  const tableH = sessions.length ? 40 + sessions.length * ROW : 0;
-  const height = HEADER + 24 + 78 + (sessions.length ? tableH + 16 + 70 : 70) + 46;
+  const e = latestEvent(day);
+  const height = HEADER + 24 + 78 + 130 + 46;
   const { canvas, ctx } = await canvasFor(height);
 
   let y = HEADER + 24;
@@ -117,82 +115,30 @@ export async function dayImage(name: string, day: DayLike, nowMs = Date.now()): 
   ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = C.ink;
   ctx.font = font(26, 700);
-  ctx.fillText(fit(ctx, name, W - PAD * 2 - 130), PAD, y + 28);
+  ctx.fillText(fit(ctx, name, W - PAD * 2 - 190), PAD, y + 28);
   ctx.fillStyle = C.muted;
   ctx.font = font(16);
   ctx.fillText(dateText(day.date), PAD, y + 56);
-  pill(ctx, (statusText[day.status || ''] || 'No check-in').toUpperCase(), W - PAD, y + 6, statusColor(day.status));
+  const label = e ? (e.kind === 'in' ? 'CHECKED IN' : 'CHECKED OUT') : (statusText[day.status || ''] || 'No check-in').toUpperCase();
+  pill(ctx, label, W - PAD, y + 6, e ? (e.kind === 'in' ? C.green : C.brand) : statusColor(day.status));
   y += 78;
 
-  if (!sessions.length) {
-    ctx.fillStyle = C.soft;
-    roundRect(ctx, PAD, y, W - PAD * 2, 56, 10);
-    ctx.fill();
+  ctx.fillStyle = C.soft;
+  roundRect(ctx, PAD, y, W - PAD * 2, 110, 12);
+  ctx.fill();
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+  if (e) {
+    ctx.fillStyle = C.ink;
+    ctx.font = font(44, 700);
+    ctx.fillText(time(e.at), PAD + 22, y + 40);
+    ctx.font = font(18, 600);
+    ctx.fillStyle = e.place ? C.green : C.muted;
+    ctx.fillText(fit(ctx, e.place || 'Location not recorded', W - PAD * 2 - 44), PAD + 22, y + 84);
+  } else {
     ctx.fillStyle = C.muted;
     ctx.font = font(16);
-    ctx.textBaseline = 'middle';
-    ctx.fillText('No check-ins on this day', PAD + 16, y + 28);
-  } else {
-    // columns
-    const cols = { inT: PAD + 12, inP: PAD + 86, outT: PAD + 292, outP: PAD + 366, dur: W - PAD - 12 };
-    ctx.fillStyle = C.soft;
-    roundRect(ctx, PAD, y, W - PAD * 2, 32, 8);
-    ctx.fill();
-    ctx.fillStyle = C.muted;
-    ctx.font = font(12, 700);
-    ctx.textBaseline = 'middle';
-    ctx.textAlign = 'left';
-    ctx.fillText('IN', cols.inT, y + 16);
-    ctx.fillText('PLACE', cols.inP, y + 16);
-    ctx.fillText('OUT', cols.outT, y + 16);
-    ctx.fillText('PLACE', cols.outP, y + 16);
-    ctx.textAlign = 'right';
-    ctx.fillText('TIME', cols.dur, y + 16);
-    y += 40;
-
-    let total = 0;
-    sessions.forEach((s, i) => {
-      const mins = minutesOf(s, nowMs);
-      total += mins;
-      const mid = y + ROW / 2;
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'middle';
-      ctx.fillStyle = C.ink;
-      ctx.font = font(18, 700);
-      ctx.fillText(time(s.in), cols.inT, mid);
-      ctx.fillText(s.out ? time(s.out) : '—', cols.outT, mid);
-      ctx.font = font(14);
-      ctx.fillStyle = s.inLocation?.siteName ? C.green : C.muted;
-      ctx.fillText(fit(ctx, s.inLocation?.siteName || '—', 190), cols.inP, mid);
-      ctx.fillStyle = s.out && s.outLocation?.siteName ? C.green : C.muted;
-      ctx.fillText(fit(ctx, s.out ? s.outLocation?.siteName || '—' : 'still in', 190), cols.outP, mid);
-      ctx.textAlign = 'right';
-      ctx.fillStyle = C.ink;
-      ctx.font = font(15, 600);
-      ctx.fillText(hm(mins), cols.dur, mid);
-      ctx.strokeStyle = C.line;
-      ctx.lineWidth = 1;
-      if (i < sessions.length - 1) {
-        ctx.beginPath();
-        ctx.moveTo(PAD, y + ROW);
-        ctx.lineTo(W - PAD, y + ROW);
-        ctx.stroke();
-      }
-      y += ROW;
-    });
-    y += 16;
-    ctx.fillStyle = '#fef2f4';
-    roundRect(ctx, PAD, y, W - PAD * 2, 56, 12);
-    ctx.fill();
-    ctx.fillStyle = C.ink;
-    ctx.font = font(16, 600);
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(sessions.some((x) => !x.out) ? 'Total so far (still checked in)' : 'Total time', PAD + 18, y + 28);
-    ctx.textAlign = 'right';
-    ctx.fillStyle = C.brand;
-    ctx.font = font(26, 700);
-    ctx.fillText(hm(total), W - PAD - 18, y + 28);
+    ctx.fillText('No check-ins on this day', PAD + 22, y + 55);
   }
   footer(ctx, height, nowMs);
   return toBlob(canvas);

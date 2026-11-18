@@ -38,23 +38,22 @@ export const statusText: Record<string, string> = {
   present: 'Present',
 };
 
-/** One day: every check-in and check-out with its place, and the total. */
-export function dayMessage(name: string, day: DayLike, nowMs = Date.now()): string {
+/** The most recent action of the day: checked in or out, when, and where. */
+export interface LatestEvent { kind: 'in' | 'out'; at: string; place: string }
+export function latestEvent(day: DayLike): LatestEvent | null {
+  const s = (day.sessions ?? [])[(day.sessions ?? []).length - 1];
+  if (!s) return null;
+  return s.out
+    ? { kind: 'out', at: s.out, place: s.outLocation?.siteName || '' }
+    : { kind: 'in', at: s.in, place: s.inLocation?.siteName || '' };
+}
+
+/** One day, kept short: date, time, place and whether the latest action was a check-in or a check-out. */
+export function dayMessage(name: string, day: DayLike, _nowMs = Date.now()): string {
   const lines = [`📋 *${COMPANY_NAME} – Attendance*`, `👤 ${name}`, `📅 ${dateText(day.date)}`];
-  const sessions = day.sessions ?? [];
-  if (!sessions.length) {
-    lines.push(`Status: ${statusText[day.status || ''] || 'No check-in'}`);
-    return lines.join('\n');
-  }
-  let total = 0;
-  for (const s of sessions) {
-    lines.push(`✅ In ${time(s.in)}${place(s.inLocation)}`);
-    if (s.out) lines.push(`🏁 Out ${time(s.out)}${place(s.outLocation)}`);
-    else lines.push('🟢 Still checked in');
-    total += minutesOf(s, nowMs);
-  }
-  if (day.status === 'late') lines.push('⚠️ Late arrival');
-  lines.push(`⏱ Total: ${hm(total)}`);
+  const e = latestEvent(day);
+  if (!e) lines.push(`Status: ${statusText[day.status || ''] || 'No check-in'}`);
+  else lines.push(`${e.kind === 'in' ? '✅ Check-in' : '🏁 Check-out'} ${time(e.at)}${e.place ? ` · ${e.place}` : ''}`);
   return lines.join('\n');
 }
 
