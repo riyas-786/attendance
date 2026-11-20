@@ -342,3 +342,7 @@ td .btn + .btn, .badge + .btn { margin-left: 6px; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme='light']) main a:not(.btn) { color: #ff7a90; } }
 .theme-btn { min-height: 34px; min-width: 34px; padding: 0 10px; font-size: 16px; line-height: 1; }
 .not-in .badge { text-transform: none; }
+
+/* Overview: the mark leave / absence row lines up evenly */
+.filters.manual > select { flex: 1 1 200px; max-width: 280px; }
+.filters.manual > input { flex: 2 1 220px; }

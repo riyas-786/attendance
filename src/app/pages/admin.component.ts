@@ -104,7 +104,7 @@ const today = () => {
 
     <section class="card">
       <h3>Mark leave / absence</h3>
-      <div class="filters">
+      <div class="filters manual">
         <select [(ngModel)]="manualUser">
           <option value="">Select staff…</option>
           @for (u of staff(); track u._id) { <option [value]="u._id">{{ u.name }}</option> }

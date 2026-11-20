@@ -46,21 +46,21 @@ import { ApiService, Shift, WorkLocation } from '../core/api.service';
 
     <section class="card">
       <h2>Shifts (duty times)</h2>
-      <p class="muted">A check-in after the shift start plus the grace period is marked late. Staff with no shift use the default duty time from <b>Settings</b>.</p>
+      <p class="muted">A check-in after the shift start plus the grace period is marked late. For a night shift that runs past midnight (for example 21:00 to 07:00), set the end time earlier than the start: check-out after midnight then closes the same shift. Staff with no shift use the default duty time from <b>Settings</b>.</p>
 
       <table>
-        <thead><tr><th>Name</th><th>Starts</th><th>Grace</th><th>Staff</th><th></th></tr></thead>
+        <thead><tr><th>Name</th><th>Starts</th><th>Ends</th><th>Grace</th><th>Staff</th><th></th></tr></thead>
         <tbody>
           @for (s of shifts(); track s._id) {
             <tr>
-              <td>{{ s.name }}</td><td>{{ s.workStart }}</td><td>{{ s.graceMinutes }} min</td><td>{{ s.staffCount }}</td>
+              <td>{{ s.name }}</td><td>{{ s.workStart }}</td><td>{{ s.workEnd || '—' }}@if (s.workEnd && s.workEnd <= s.workStart) { <span class="badge">night</span> }</td><td>{{ s.graceMinutes }} min</td><td>{{ s.staffCount }}</td>
               <td>
                 <button class="btn small" (click)="editShift(s)">Edit</button>
                 <button class="btn small" (click)="removeShift(s)">Delete</button>
               </td>
             </tr>
           } @empty {
-            <tr><td colspan="5" class="muted">No shifts yet</td></tr>
+            <tr><td colspan="6" class="muted">No shifts yet</td></tr>
           }
         </tbody>
       </table>
@@ -69,6 +69,7 @@ import { ApiService, Shift, WorkLocation } from '../core/api.service';
       <form class="grid" (ngSubmit)="saveShift()">
         <input name="sname" placeholder="Name (e.g. Evening)" [(ngModel)]="shiftForm.name" required />
         <label>Starts at <input name="sstart" type="time" [(ngModel)]="shiftForm.workStart" required /></label>
+        <label>Ends at (optional) <input name="send" type="time" [(ngModel)]="shiftForm.workEnd" /></label>
         <label>Grace (minutes) <input name="sgrace" type="number" min="0" max="240" [(ngModel)]="shiftForm.graceMinutes" required /></label>
         <div class="actions left">
           <button class="btn primary" type="submit">{{ shiftForm.id ? 'Save' : 'Add shift' }}</button>
@@ -92,7 +93,7 @@ export class SitesComponent implements OnInit {
   shiftForm = this.blankShift();
 
   private blankLoc() { return { id: '', name: '', lat: null as number | null, lng: null as number | null, radiusMeters: 200 }; }
-  private blankShift() { return { id: '', name: '', workStart: '09:00', graceMinutes: 0 }; }
+  private blankShift() { return { id: '', name: '', workStart: '09:00', workEnd: '', graceMinutes: 0 }; }
 
   ngOnInit() { this.load(); }
   load() {
@@ -139,14 +140,14 @@ export class SitesComponent implements OnInit {
 
   // ---- shifts ----
   editShift(s: Shift) {
-    this.shiftForm = { id: s._id, name: s.name, workStart: s.workStart, graceMinutes: s.graceMinutes };
+    this.shiftForm = { id: s._id, name: s.name, workStart: s.workStart, workEnd: s.workEnd || '', graceMinutes: s.graceMinutes };
     this.shiftMsg.set('');
   }
   resetShift() { this.shiftForm = this.blankShift(); }
 
   saveShift() {
     const f = this.shiftForm;
-    const body = { name: f.name, workStart: f.workStart, graceMinutes: Number(f.graceMinutes) };
+    const body = { name: f.name, workStart: f.workStart, workEnd: f.workEnd, graceMinutes: Number(f.graceMinutes) };
     const req = f.id ? this.api.updateShift(f.id, body) : this.api.addShift(body);
     req.subscribe({
       next: () => { this.shiftErr.set(false); this.shiftMsg.set('Saved'); this.resetShift(); this.load(); },

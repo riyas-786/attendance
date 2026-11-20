@@ -110,6 +110,7 @@ export interface Shift {
   _id: string;
   name: string;
   workStart: string;
+  workEnd?: string; // optional; an end at or before the start = runs past midnight
   graceMinutes: number;
   staffCount?: number;
 }
@@ -185,6 +186,7 @@ export interface Payroll {
 export interface Rules {
   locationRequired: boolean;
   workStart?: string;
+  workEnd?: string;
   graceMinutes?: number;
   shiftName?: string;
   places?: string[];

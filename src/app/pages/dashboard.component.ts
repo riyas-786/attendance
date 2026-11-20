@@ -33,7 +33,7 @@ import { ShareDayComponent } from './share-day.component';
 
       @if (rules()?.workStart; as start) {
         <p class="muted">
-          Your duty starts at {{ start }}{{ rules()?.shiftName ? ' (' + rules()?.shiftName + ')' : '' }}@if (rules()?.graceMinutes) {, {{ rules()?.graceMinutes }} min grace}
+          Your duty starts at {{ start }}{{ rules()?.workEnd ? ' and ends at ' + rules()?.workEnd : '' }}{{ rules()?.shiftName ? ' (' + rules()?.shiftName + ')' : '' }}@if (rules()?.graceMinutes) {, {{ rules()?.graceMinutes }} min grace}
         </p>
       }
 

@@ -15,3 +15,11 @@ export const adminGuard: CanActivateFn = (_route, state) => {
   if (!auth.isLoggedIn()) return router.createUrlTree(['/login'], { queryParams: { returnUrl: state.url } });
   return auth.isAdmin() ? true : router.createUrlTree(['/']);
 };
+
+// Pages for employees (Today, History, Leave): an admin account does not check in, so it goes to the admin Overview
+export const staffGuard: CanActivateFn = (_route, state) => {
+  const auth = inject(AuthService);
+  const router = inject(Router);
+  if (!auth.isLoggedIn()) return router.createUrlTree(['/login'], { queryParams: { returnUrl: state.url } });
+  return auth.isAdmin() ? router.createUrlTree(['/admin']) : true;
+};
