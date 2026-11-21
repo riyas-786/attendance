@@ -1,6 +1,7 @@
 import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ApiService, AppSettings } from '../core/api.service';
+import { TimeFormat, formatClock } from '../core/time-format';
 
 const DAYS = [
   { n: 0, label: 'Sun' }, { n: 1, label: 'Mon' }, { n: 2, label: 'Tue' }, { n: 3, label: 'Wed' },
@@ -14,6 +15,26 @@ const DAYS = [
   template: `
     @if (s(); as v) {
       <form (ngSubmit)="save()" (input)="ok.set(false)" (change)="ok.set(false)">
+        <section class="card">
+          <h2>Company time zone</h2>
+          <p class="muted">Days, duty times, late checks, reports and payroll all follow this time zone, whatever country the phones or the server are in. Every screen shows times in it.</p>
+          <div class="grid">
+            <label>Time zone
+              <select name="timezone" [(ngModel)]="v.timezone">
+                <optgroup label="Common">
+                  @for (z of commonZones; track z.id) { <option [value]="z.id">{{ z.label }}</option> }
+                </optgroup>
+                @if (!isCommon(v.timezone)) { <option [value]="v.timezone">{{ v.timezone }}</option> }
+                <optgroup label="All time zones">
+                  @for (z of allZones; track z) { <option [value]="z">{{ z }}</option> }
+                </optgroup>
+              </select>
+            </label>
+            <div class="muted" style="align-self:end">Right now there: <b>{{ nowThere(v.timezone) }}</b></div>
+          </div>
+          <p class="muted">Changing it only affects new check-ins and future days. Records already saved keep the day they were saved under.</p>
+        </section>
+
         <section class="card">
           <h2>Default working hours and late rule</h2>
           <p class="muted">Used for staff who have no shift. For different duty times, create shifts on the <b>Locations &amp; shifts</b> page.</p>
@@ -122,6 +143,35 @@ const DAYS = [
 })
 export class SettingsComponent implements OnInit, OnDestroy {
   private api = inject(ApiService);
+  private tf = inject(TimeFormat);
+
+  commonZones = [
+    { id: 'Asia/Kolkata', label: 'India (Asia/Kolkata, UTC+5:30)' },
+    { id: 'Asia/Dubai', label: 'UAE / Oman (Asia/Dubai, UTC+4)' },
+    { id: 'Asia/Riyadh', label: 'Saudi Arabia / Kuwait / Qatar (Asia/Riyadh, UTC+3)' },
+    { id: 'Asia/Karachi', label: 'Pakistan (Asia/Karachi, UTC+5)' },
+    { id: 'Asia/Dhaka', label: 'Bangladesh (Asia/Dhaka, UTC+6)' },
+    { id: 'Asia/Colombo', label: 'Sri Lanka (Asia/Colombo, UTC+5:30)' },
+    { id: 'Asia/Kathmandu', label: 'Nepal (Asia/Kathmandu, UTC+5:45)' },
+    { id: 'Asia/Singapore', label: 'Singapore / Malaysia (Asia/Singapore, UTC+8)' },
+    { id: 'Asia/Manila', label: 'Philippines (Asia/Manila, UTC+8)' },
+    { id: 'Africa/Cairo', label: 'Egypt (Africa/Cairo)' },
+    { id: 'Europe/London', label: 'United Kingdom (Europe/London)' },
+    { id: 'Europe/Paris', label: 'Central Europe (Europe/Paris)' },
+    { id: 'America/New_York', label: 'US Eastern (America/New_York)' },
+    { id: 'America/Chicago', label: 'US Central (America/Chicago)' },
+    { id: 'America/Los_Angeles', label: 'US Pacific (America/Los_Angeles)' },
+    { id: 'Australia/Sydney', label: 'Australia East (Australia/Sydney)' },
+    { id: 'UTC', label: 'UTC' },
+  ];
+  // every zone this browser knows (older browsers: only the common list above)
+  allZones: string[] = (() => {
+    try { return (Intl as unknown as { supportedValuesOf: (k: string) => string[] }).supportedValuesOf('timeZone'); }
+    catch { return []; }
+  })();
+  isCommon(id: string) { return this.commonZones.some((z) => z.id === id); }
+  nowThere(tz: string) { return formatClock(new Date(), false, this.tf.is24(), tz) || '—'; }
+
   private hideTimer?: ReturnType<typeof setTimeout>;
   ngOnDestroy() { clearTimeout(this.hideTimer); }
   s = signal<AppSettings | null>(null);
@@ -191,6 +241,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
     this.api.saveSettings(body).subscribe({
       next: (saved) => {
         this.s.set(saved);
+        this.tf.setTz(saved.timezone);
         this.ok.set(true);
         this.saving.set(false);
         // the green note hides itself after a few seconds

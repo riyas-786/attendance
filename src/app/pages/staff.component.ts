@@ -66,6 +66,13 @@ import { ApiService, PayType, Shift, StaffMember, WorkLocation } from '../core/a
               </select>
             </label>
           }
+          <label>Company <input [(ngModel)]="e.company" name="ecompany" maxlength="60" placeholder="e.g. TP Group" /></label>
+          <label>Salary balance paid by
+            <select [(ngModel)]="e.salaryMode" name="emode">
+              <option value="bank">Bank</option>
+              <option value="cash">Cash</option>
+            </select>
+          </label>
           <label>Join date (optional) <input type="date" [(ngModel)]="e.joinDate" name="ejoin" /></label>
           <label>Duty time (shift)
             <select [(ngModel)]="e.shift" name="eshift">
@@ -113,6 +120,11 @@ import { ApiService, PayType, Shift, StaffMember, WorkLocation } from '../core/a
         <input name="password" type="password" placeholder="Temporary password (min 6)" [(ngModel)]="form.password" required minlength="6" />
         <input name="employeeId" placeholder="Employee ID" [(ngModel)]="form.employeeId" />
         <input name="department" placeholder="Department" [(ngModel)]="form.department" />
+        <input name="company" placeholder="Company (e.g. TP Group)" [(ngModel)]="form.company" maxlength="60" />
+        <select name="salaryMode" [(ngModel)]="form.salaryMode">
+          <option value="bank">Salary paid by bank</option>
+          <option value="cash">Salary paid in cash</option>
+        </select>
         <select name="payType" [(ngModel)]="form.payType">
           <option value="monthly">Paid monthly</option>
           <option value="daily">Paid per day</option>
@@ -123,6 +135,7 @@ import { ApiService, PayType, Shift, StaffMember, WorkLocation } from '../core/a
         <select name="role" [(ngModel)]="form.role">
           <option value="staff">Staff</option>
           <option value="admin">Admin</option>
+          <option value="owner">Owner (view attendance only)</option>
         </select>
         <button class="btn primary" type="submit">Add</button>
       </form>
@@ -139,12 +152,12 @@ export class StaffComponent implements OnInit {
   msg = signal('');
   editMsg = signal('');
   editing = signal<StaffMember | null>(null);
-  e = { monthlyMethod: '' as '' | 'fixed' | 'days', payType: 'monthly' as PayType, salary: 0 as number | null, joinDate: '', shift: '', anyLocation: false, locations: [] as string[], deviceLock: true };
+  e = { company: '', salaryMode: 'bank' as 'bank' | 'cash', monthlyMethod: '' as '' | 'fixed' | 'days', payType: 'monthly' as PayType, salary: 0 as number | null, joinDate: '', shift: '', anyLocation: false, locations: [] as string[], deviceLock: true };
 
   private blank() {
     return {
       name: '', email: '', password: '', employeeId: '', department: '',
-      role: 'staff' as 'staff' | 'admin', payType: 'monthly' as PayType, baseSalary: null as number | null, joinDate: '',
+      role: 'staff' as 'staff' | 'admin' | 'owner', company: '', salaryMode: 'bank' as 'bank' | 'cash', payType: 'monthly' as PayType, baseSalary: null as number | null, joinDate: '',
     };
   }
   form = this.blank();
@@ -184,6 +197,8 @@ export class StaffComponent implements OnInit {
     this.editMsg.set('');
     this.editing.set(u);
     this.e = {
+      company: u.company || '',
+      salaryMode: u.salaryMode === 'cash' ? 'cash' : 'bank',
       monthlyMethod: u.monthlyMethod || '',
       payType: u.payType || 'monthly',
       salary: u.baseSalary ?? 0,
@@ -203,6 +218,8 @@ export class StaffComponent implements OnInit {
     this.api
       .updateStaff(u._id, {
         payType: this.e.payType,
+        company: this.e.company.trim(),
+        salaryMode: this.e.salaryMode,
         monthlyMethod: this.e.monthlyMethod,
         baseSalary: this.e.salary ?? 0,
         joinDate: this.e.joinDate,

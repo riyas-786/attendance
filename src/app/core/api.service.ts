@@ -1,3 +1,4 @@
+import { use24h } from './time-format';
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { API_URL } from '../config';
@@ -34,6 +35,20 @@ export interface AttendanceRecord {
   user?: { _id: string; name: string; email: string; department?: string; employeeId?: string };
 }
 
+export interface OwnerPerson {
+  id: string;
+  name: string;
+  department: string;
+  status: 'present' | 'late' | 'leave' | 'absent' | 'not in';
+  sessions: { in: string; out: string | null }[];
+  workedMinutes: number;
+}
+export interface OwnerOverview {
+  date: string;
+  counts: { total: number; present: number; late: number; leave: number; absent: number; notIn: number };
+  people: OwnerPerson[];
+}
+
 export interface Summary {
   date: string;
   totalStaff: number;
@@ -49,7 +64,7 @@ export interface StaffMember {
   _id: string;
   name: string;
   email: string;
-  role: 'admin' | 'staff';
+  role: 'admin' | 'staff' | 'owner';
   department?: string;
   employeeId?: string;
   active: boolean;
@@ -62,6 +77,8 @@ export interface StaffMember {
   hasDevice?: boolean;
   deviceLock?: boolean;
   monthlyMethod?: '' | 'fixed' | 'days'; // monthly staff: '' = use the Settings default
+  company?: string; // which business pays this person (Salary summary groups by it)
+  salaryMode?: 'bank' | 'cash'; // how the salary balance is paid out
 }
 
 export interface WorkLocation {
@@ -115,6 +132,20 @@ export interface Shift {
   staffCount?: number;
 }
 
+export interface SalarySummary {
+  company: string;
+  currency: string;
+  period: { key: string; month: string; from: string; to: string; custom: boolean; inProgress: boolean };
+  rows: { userId: string; name: string; employeeId: string; department: string; company: string; mode: 'cash' | 'bank'; earned: number; advance: number; otherDeductions: number; balance: number; shortfall: number }[];
+  totals: { staff: number; earned: number; advance: number; otherDeductions: number; balance: number };
+  payBy: { cash: { staff: number; amount: number }; bank: { staff: number; amount: number } };
+  funds: { cash: number; bank: number };
+  need: { cash: number; bank: number };
+  spare: { cash: number; bank: number };
+  needTotal: number;
+  byCompany: { company: string; staff: number; earned: number; advance: number; balance: number; cash: number; bank: number }[];
+}
+
 export interface PayrollRow {
   userId: string;
   name: string;
@@ -166,6 +197,7 @@ export interface AppSettings {
   payrollStartDay: number;
   payHoursPerDay: number;
   monthlyMethod: 'fixed' | 'days';
+  timezone: string;
 }
 
 export interface Payroll {
@@ -232,6 +264,7 @@ export class ApiService {
   allAttendance(filters: { date?: string; from?: string; to?: string; userId?: string; status?: string }) {
     return this.http.get<AttendanceRecord[]>(`${API_URL}/attendance`, { params: this.params(filters) });
   }
+  ownerOverview(date?: string) { return this.http.get<OwnerOverview>(`${API_URL}/attendance/owner`, { params: this.params({ date }) }); }
   summary(date?: string) { return this.http.get<Summary>(`${API_URL}/attendance/summary`, { params: this.params({ date }) }); }
   manual(body: { userId: string; date: string; status?: string; checkIn?: string | null; checkOut?: string | null; note?: string; leaveType?: LeaveType }) {
     return this.http.put<AttendanceRecord>(`${API_URL}/attendance/manual`, body);
@@ -240,11 +273,11 @@ export class ApiService {
   // --- reports (file download through the authenticated client) ---
   downloadReport(format: 'csv' | 'xlsx', f: ReportFilters) {
     return this.http.get(`${API_URL}/attendance/export.${format}`, {
-      params: this.params({ ...f }),
+      params: this.params({ ...f, ...(use24h() ? {} : { timeFormat: '12' }) }),
       responseType: 'blob',
     });
   }
-  reportPreview(f: ReportFilters) { return this.http.get<ReportPreview>(`${API_URL}/attendance/report`, { params: this.params({ ...f }) }); }
+  reportPreview(f: ReportFilters) { return this.http.get<ReportPreview>(`${API_URL}/attendance/report`, { params: this.params({ ...f, ...(use24h() ? {} : { timeFormat: '12' }) }) }); }
 
   // --- staff ---
   staff() { return this.http.get<StaffMember[]>(`${API_URL}/staff`); }
@@ -270,6 +303,9 @@ export class ApiService {
     return this.http.post(`${API_URL}/adjustments`, body);
   }
   deleteAdjustment(id: string) { return this.http.delete(`${API_URL}/adjustments/${id}`); }
+  salarySummary(q: PayrollQuery = {}) { return this.http.get<SalarySummary>(`${API_URL}/payroll/summary`, { params: this.params({ ...q }) }); }
+  saveSalaryFunds(key: string, cash: number, bank: number) { return this.http.put<{ key: string; cash: number; bank: number }>(`${API_URL}/payroll/funds`, { key, cash, bank }); }
+  downloadSalarySummary(q: PayrollQuery) { return this.http.get(`${API_URL}/payroll/summary.xlsx`, { params: this.params({ ...q }), responseType: 'blob' }); }
   downloadPayroll(q: PayrollQuery, format: 'xlsx' | 'csv' = 'xlsx') {
     return this.http.get(`${API_URL}/payroll/export.${format}`, { params: this.params({ ...q }), responseType: 'blob' });
   }

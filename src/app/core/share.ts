@@ -1,5 +1,6 @@
 import { COMPANY_NAME } from '../config';
 import { Place, Session } from './api.service';
+import { formatClock } from './time-format';
 
 // Builds the plain-text attendance messages staff share to a WhatsApp group.
 // WhatsApp formatting: *bold*. Only the saved place NAME is shared (never GPS coordinates).
@@ -12,10 +13,7 @@ export interface DayLike {
 
 const MAX_LENGTH = 3500; // keeps the wa.me link comfortably under WhatsApp's limit
 
-export const time = (iso: string) => {
-  const d = new Date(iso);
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-};
+export const time = (iso: string) => formatClock(iso);
 
 export const hm = (minutes: number) => `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 

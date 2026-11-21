@@ -1,4 +1,4 @@
-/* Teepee Group · Staff Attendance
+/* TEE PEE Group · Staff Attendance
    Brand red on warm paper. One bold element (the clock and the Check in button), everything else quiet. */
 
 :root {
@@ -346,3 +346,10 @@ td .btn + .btn, .badge + .btn { margin-left: 6px; }
 /* Overview: the mark leave / absence row lines up evenly */
 .filters.manual > select { flex: 1 1 200px; max-width: 280px; }
 .filters.manual > input { flex: 2 1 220px; }
+
+/* ---------- printing (Salary summary and other pages): no menus or buttons, plain white ---------- */
+@media print {
+  .nav, .no-print { display: none !important; }
+  body { background: #fff; color: #000; }
+  .card { box-shadow: none; }
+}

@@ -1,11 +1,9 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
+import { todayKey } from '../core/time-format';
 import { FormsModule } from '@angular/forms';
 import { ApiService, LeaveRequest, LeaveType } from '../core/api.service';
 
-const today = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-};
+const today = () => todayKey();
 
 @Component({
   selector: 'app-leave',

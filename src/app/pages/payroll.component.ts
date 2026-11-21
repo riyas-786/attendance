@@ -1,4 +1,5 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { todayKey } from '../core/time-format';
 import { DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService, Payroll, PayrollQuery, Shift, StaffMember } from '../core/api.service';
@@ -287,8 +288,7 @@ export class PayrollComponent implements OnInit {
   // today if it is inside the period on screen, otherwise the last day of the period
   private defaultDate() {
     const d = this.data();
-    const t = new Date();
-    const today = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
+    const today = todayKey();
     if (!d) return today;
     return today < d.from ? d.from : today > d.to ? d.to : today;
   }

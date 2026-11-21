@@ -1,5 +1,6 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
-import { DatePipe } from '@angular/common';
+import { TimeFormat } from '../core/time-format';
+import { ClockPipe } from '../core/clock.pipe';
 import { FormsModule } from '@angular/forms';
 import { ApiService, AttendanceRecord } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
@@ -9,7 +10,7 @@ import { dayImage, preloadShareAssets, rangeImage, shareImage } from '../core/sh
 @Component({
   selector: 'app-history',
   standalone: true,
-  imports: [DatePipe, FormsModule],
+  imports: [ClockPipe, FormsModule],
   template: `
     <section class="card">
       <h2>My attendance</h2>
@@ -32,7 +33,7 @@ import { dayImage, preloadShareAssets, rangeImage, shareImage } from '../core/sh
               <td>{{ r.date }}</td>
               <td>
                 @for (s of r.sessions ?? []; track $index) {
-                  <div>{{ s.in | date: 'HH:mm' }} – {{ s.out ? (s.out | date: 'HH:mm') : 'in' }}</div>
+                  <div>{{ s.in | clock: tf.is24() : tf.tz() }} – {{ s.out ? (s.out | clock: tf.is24() : tf.tz()) : 'in' }}</div>
                 } @empty { — }
               </td>
               <td>{{ r.workedMinutes ? (r.workedMinutes / 60).toFixed(1) : '—' }}</td>
@@ -51,6 +52,7 @@ import { dayImage, preloadShareAssets, rangeImage, shareImage } from '../core/sh
   `,
 })
 export class HistoryComponent implements OnInit {
+  tf = inject(TimeFormat);
   private api = inject(ApiService);
   private auth = inject(AuthService);
   rows = signal<AttendanceRecord[]>([]);

@@ -1,17 +1,15 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
-import { DatePipe } from '@angular/common';
+import { TimeFormat, todayKey } from '../core/time-format';
+import { ClockPipe } from '../core/clock.pipe';
 import { FormsModule } from '@angular/forms';
 import { ApiService, AttendanceRecord, Place, StaffMember, Summary } from '../core/api.service';
 
-const today = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-};
+const today = () => todayKey();
 
 @Component({
   selector: 'app-admin',
   standalone: true,
-  imports: [DatePipe, FormsModule],
+  imports: [ClockPipe, FormsModule],
   template: `
     <section class="card">
       <div class="row-between">
@@ -38,7 +36,7 @@ const today = () => {
               <td>{{ r.user?.department || '—' }}</td>
               <td>
                 @for (s of r.sessions ?? []; track $index) {
-                  <div>{{ s.in | date: 'HH:mm' }} – {{ s.out ? (s.out | date: 'HH:mm') : 'still in' }}</div>
+                  <div>{{ s.in | clock: tf.is24() : tf.tz() }} – {{ s.out ? (s.out | clock: tf.is24() : tf.tz()) : 'still in' }}</div>
                 } @empty { — }
               </td>
               <td>{{ r.workedMinutes ? (r.workedMinutes / 60).toFixed(1) : '—' }}</td>
@@ -59,7 +57,7 @@ const today = () => {
                       @for (s of r.sessions ?? []; track $index) {
                         <tr>
                           <td>{{ $index + 1 }}</td>
-                          <td>{{ s.in | date: 'HH:mm' }}</td>
+                          <td>{{ s.in | clock: tf.is24() : tf.tz() }}</td>
                           <td>
                             @if (place(s.inLocation, s.inMethod); as p) {
                               <span [class]="p.cls">{{ p.text }}</span>
@@ -67,7 +65,7 @@ const today = () => {
                               @if (p.note) { <div class="muted">{{ p.note }}</div> }
                             }
                           </td>
-                          <td>{{ s.out ? (s.out | date: 'HH:mm') : 'still in' }}</td>
+                          <td>{{ s.out ? (s.out | clock: tf.is24() : tf.tz()) : 'still in' }}</td>
                           <td>
                             @if (s.out) {
                               @if (place(s.outLocation, s.inMethod); as p) {
@@ -122,6 +120,7 @@ const today = () => {
   `,
 })
 export class AdminComponent implements OnInit {
+  tf = inject(TimeFormat);
   private api = inject(ApiService);
   date = today();
   todayKey = today();

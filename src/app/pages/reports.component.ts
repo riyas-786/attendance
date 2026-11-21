@@ -1,4 +1,5 @@
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { todayDate } from '../core/time-format';
 import { FormsModule } from '@angular/forms';
 import { ApiService, ReportFilters, ReportPreview, Shift, StaffMember, WorkLocation } from '../core/api.service';
 
@@ -147,7 +148,7 @@ export class ReportsComponent implements OnInit {
   }
 
   range(kind: 'today' | 'week' | 'month' | 'last') {
-    const n = new Date();
+    const n = todayDate();
     if (kind === 'today') { this.from = this.to = fmt(n); }
     else if (kind === 'week') { this.from = fmt(new Date(n.getFullYear(), n.getMonth(), n.getDate() - 6)); this.to = fmt(n); }
     else if (kind === 'month') { this.from = fmt(new Date(n.getFullYear(), n.getMonth(), 1)); this.to = fmt(n); }

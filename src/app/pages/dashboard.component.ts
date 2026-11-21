@@ -1,5 +1,6 @@
 import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
-import { DatePipe } from '@angular/common';
+import { TimeFormat } from '../core/time-format';
+import { ClockPipe } from '../core/clock.pipe';
 import { ApiService, AttendanceRecord, PresencePayload, Rules } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
 import { LocationService } from '../core/location.service';
@@ -9,12 +10,13 @@ import { ShareDayComponent } from './share-day.component';
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [DatePipe, ShareDayComponent],
+  imports: [ClockPipe, ShareDayComponent],
   template: `
     <section class="card center">
       <p class="muted">Welcome, {{ auth.user()?.name }}</p>
-      <div class="clock">{{ now() | date: 'HH:mm:ss' }}</div>
-      <div class="muted">{{ now() | date: 'EEEE, d MMMM y' }}</div>
+      <div class="clock">{{ now() | clock: tf.is24() : tf.tz() : 'hms' }}</div>
+      <div class="muted">{{ now() | clock: tf.is24() : tf.tz() : 'date' }}</div>
+      @if (tf.tz()) { <div class="muted">Company time · {{ tf.tz() }}</div> }
 
       <div class="status-line">
         @if (sessions().length === 0) {
@@ -23,11 +25,11 @@ import { ShareDayComponent } from './share-day.component';
           </span>
         }
         @else if (isIn()) {
-          <span class="badge" [class]="record()!.status">Checked in at {{ sessions()[sessions().length - 1].in | date: 'HH:mm' }}
+          <span class="badge" [class]="record()!.status">Checked in at {{ sessions()[sessions().length - 1].in | clock: tf.is24() : tf.tz() }}
             @if (record()!.status === 'late' && sessions().length === 1) { (late) }
           </span>
         } @else {
-          <span class="badge done">Checked out at {{ sessions()[sessions().length - 1].out | date: 'HH:mm' }}</span>
+          <span class="badge done">Checked out at {{ sessions()[sessions().length - 1].out | clock: tf.is24() : tf.tz() }}</span>
         }
       </div>
 
@@ -75,8 +77,8 @@ import { ShareDayComponent } from './share-day.component';
             @for (s of sessions(); track $index) {
               <tr>
                 <td>{{ $index + 1 }}</td>
-                <td>{{ s.in | date: 'HH:mm' }}</td>
-                <td>{{ s.out ? (s.out | date: 'HH:mm') : 'still in' }}</td>
+                <td>{{ s.in | clock: tf.is24() : tf.tz() }}</td>
+                <td>{{ s.out ? (s.out | clock: tf.is24() : tf.tz()) : 'still in' }}</td>
                 <td>{{ fmt(sessionMinutes(s)) }}</td>
               </tr>
             }
@@ -87,6 +89,7 @@ import { ShareDayComponent } from './share-day.component';
   `,
 })
 export class DashboardComponent implements OnInit, OnDestroy {
+  tf = inject(TimeFormat);
   api = inject(ApiService);
   auth = inject(AuthService);
   private loc = inject(LocationService);
