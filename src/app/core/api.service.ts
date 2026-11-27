@@ -1,3 +1,4 @@
+import { use24h } from './time-format';
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { API_URL } from '../config';
@@ -17,6 +18,7 @@ export interface Session {
   inLocation?: Place;
   outLocation?: Place;
   inMethod?: 'button' | 'qr' | 'admin';
+  outMethod?: 'auto' | 'admin'; // auto = closed by the system (forgotten check-out), admin = time typed in by an admin
 }
 
 export interface AttendanceRecord {
@@ -25,6 +27,10 @@ export interface AttendanceRecord {
   checkIn?: string;
   checkOut?: string;
   status: 'present' | 'late' | 'absent' | 'leave';
+  auto?: boolean; // recorded by the system for an auto-attendance person
+  halfDay?: boolean; // leave / absence for half the day (the other half was worked)
+  otStatus?: '' | 'accepted' | 'rejected'; // weekend / holiday attendance: '' = waiting for the admin
+  otPercent?: number; // accepted as OT at this % of the day's pay (100 = full day)
   workedMinutes: number;
   note?: string;
   // every check-in / check-out pair of the day; the last one has no `out` while the person is still in
@@ -32,6 +38,21 @@ export interface AttendanceRecord {
   inMethod?: 'button' | 'qr'; // 'qr' only appears on older records
   inLocation?: { lat: number; lng: number; distanceM?: number };
   user?: { _id: string; name: string; email: string; department?: string; employeeId?: string };
+}
+
+export interface OwnerPerson {
+  id: string;
+  name: string;
+  department: string;
+  status: 'present' | 'late' | 'leave' | 'absent' | 'not in';
+  half?: boolean; // half-day leave / absence
+  sessions: { in: string; out: string | null }[];
+  workedMinutes: number;
+}
+export interface OwnerOverview {
+  date: string;
+  counts: { total: number; present: number; late: number; leave: number; absent: number; notIn: number };
+  people: OwnerPerson[];
 }
 
 export interface Summary {
@@ -49,9 +70,11 @@ export interface StaffMember {
   _id: string;
   name: string;
   email: string;
-  role: 'admin' | 'staff';
+  role: 'admin' | 'staff' | 'owner' | 'accountant';
+  permissions?: string[]; // accountant: the options the admin allowed
   department?: string;
   employeeId?: string;
+  phone?: string; // WhatsApp number with country code (digits)
   active: boolean;
   payType?: PayType;
   baseSalary?: number; // monthly salary, rate per day or rate per hour, depending on payType
@@ -61,7 +84,10 @@ export interface StaffMember {
   anyLocation?: boolean;
   hasDevice?: boolean;
   deviceLock?: boolean;
+  autoAttendance?: boolean; // no smartphone: recorded present for the shift every working day
   monthlyMethod?: '' | 'fixed' | 'days'; // monthly staff: '' = use the Settings default
+  company?: string; // which business pays this person (Salary summary groups by it)
+  salaryMode?: 'bank' | 'cash'; // how the salary balance is paid out
 }
 
 export interface WorkLocation {
@@ -115,11 +141,74 @@ export interface Shift {
   staffCount?: number;
 }
 
+export interface SalarySummary {
+  company: string;
+  currency: string;
+  period: { key: string; month: string; from: string; to: string; custom: boolean; inProgress: boolean };
+  rows: { userId: string; name: string; employeeId: string; department: string; company: string; mode: 'cash' | 'bank'; earned: number; advance: number; otherDeductions: number; balance: number; shortfall: number }[];
+  totals: { staff: number; earned: number; advance: number; otherDeductions: number; balance: number };
+  payBy: { cash: { staff: number; amount: number }; bank: { staff: number; amount: number } };
+  funds: { cash: number; bank: number };
+  need: { cash: number; bank: number };
+  spare: { cash: number; bank: number };
+  needTotal: number;
+  byCompany: { company: string; staff: number; earned: number; advance: number; balance: number; cash: number; bank: number }[];
+}
+
+export interface HolidayEntry {
+  userId: string;
+  name: string;
+  employeeId: string;
+  payType: 'monthly' | 'daily' | 'hourly';
+  date: string;
+  hours: number;
+  status: 'pending' | 'accepted' | 'rejected';
+  percent: number; // % of the day's pay accepted (waiting: 100)
+  amount: number; // what it pays (pending: a full day / the hours worked)
+  multiplier: number;
+}
+
+export interface HoursDay {
+  date: string;
+  minutes: number;
+  in: string;
+  out: string | null;
+  sessions: number;
+  status: 'present' | 'late' | 'absent' | 'leave';
+  open: boolean; // checked in, no check-out yet
+  auto: boolean; // check-out closed by the system
+}
+export interface HoursRow {
+  userId: string;
+  name: string;
+  employeeId: string;
+  department: string;
+  daysPresent: number;
+  totalMinutes: number;
+  avgMinutes: number;
+  longestMinutes: number;
+  lateDays: number;
+  openDays: number;
+  expectedMinutes: number | null; // only for staff with a shift that has an end time
+  diffMinutes: number | null;
+  days: HoursDay[];
+}
+export interface HoursReport {
+  from: string;
+  to: string;
+  workingDays: number;
+  rows: HoursRow[];
+  totals: { staff: number; totalMinutes: number; avgMinutesPerStaff: number; openDays: number };
+}
+
 export interface PayrollRow {
   userId: string;
   name: string;
   employeeId: string;
   department: string;
+  phone?: string;
+  attendancePct?: number; // days worked / working days so far, in %
+  workingDaysSoFar?: number;
   payType: PayType;
   payMethod?: '' | 'fixed' | 'days';
   rate: number;
@@ -143,7 +232,8 @@ export interface PayrollRow {
 }
 
 export interface PayAdjustment {
-  id: string;
+  id?: string; // missing on automatic lines such as Holiday OT
+  auto?: boolean; // worked out by the system (accepted weekend / holiday attendance), cannot be removed here
   date: string; // the day it is for (empty on older entries)
   type: 'earning' | 'deduction';
   label: string;
@@ -152,6 +242,11 @@ export interface PayAdjustment {
 }
 
 export interface AppSettings {
+  autoCheckoutEnabled: boolean; // forgotten check-outs are closed automatically
+  autoCheckoutTime: string; // HH:MM: after this time a check-in that is still open is closed
+  autoCheckoutHours: number; // closed after this many hours when the person has no shift end
+  halfDayEnabled: boolean; // admins can mark half-day leave / absence
+  holidayOtMultiplier: number; // pay for accepted weekend / holiday attendance, x a normal day
   workStart: string;
   lateGraceMinutes: number;
   officeLat: number | null;
@@ -166,6 +261,13 @@ export interface AppSettings {
   payrollStartDay: number;
   payHoursPerDay: number;
   monthlyMethod: 'fixed' | 'days';
+  timezone: string;
+}
+
+export interface MyPayroll {
+  month: string; from: string; to: string; currency: string; inProgress: boolean;
+  totalWorkingDays: number; lateThreshold: number; lateDays: number;
+  row: Omit<PayrollRow, 'phone'>;
 }
 
 export interface Payroll {
@@ -181,6 +283,14 @@ export interface Payroll {
   inProgress: boolean;
   rows: PayrollRow[];
   totals: { baseSalary: number; deduction: number; additions: number; otherDeductions: number; netSalary: number };
+}
+
+export interface PayPeriodInfo {
+  startDay: number;
+  today: string;
+  custom: boolean; // true when the pay month does not start on the 1st
+  current: { key: string; from: string; to: string };
+  previous: { key: string; from: string; to: string };
 }
 
 export interface Rules {
@@ -220,6 +330,7 @@ export class ApiService {
   private http = inject(HttpClient);
 
   // --- attendance (staff) ---
+  payPeriod() { return this.http.get<PayPeriodInfo>(`${API_URL}/attendance/pay-period`); }
   rules() { return this.http.get<Rules>(`${API_URL}/attendance/rules`); }
   today() { return this.http.get<AttendanceRecord | null>(`${API_URL}/attendance/today`); }
   checkIn(body: PresencePayload = {}) { return this.http.post<AttendanceRecord>(`${API_URL}/attendance/check-in`, body); }
@@ -232,19 +343,27 @@ export class ApiService {
   allAttendance(filters: { date?: string; from?: string; to?: string; userId?: string; status?: string }) {
     return this.http.get<AttendanceRecord[]>(`${API_URL}/attendance`, { params: this.params(filters) });
   }
+  ownerOverview(date?: string) { return this.http.get<OwnerOverview>(`${API_URL}/attendance/owner`, { params: this.params({ date }) }); }
   summary(date?: string) { return this.http.get<Summary>(`${API_URL}/attendance/summary`, { params: this.params({ date }) }); }
-  manual(body: { userId: string; date: string; status?: string; checkIn?: string | null; checkOut?: string | null; note?: string; leaveType?: LeaveType }) {
+  holidayAttendance(q: PayrollQuery) { return this.http.get<{ currency: string; items: HolidayEntry[] }>(`${API_URL}/payroll/holiday-attendance`, { params: this.params({ ...q }) }); }
+  setOt(userId: string, date: string, decision: 'accepted' | 'rejected' | 'pending', percent = 100) { return this.http.post<{ otStatus: string; otPercent: number }>(`${API_URL}/attendance/ot`, { userId, date, decision, percent }); }
+  clearMark(userId: string, date: string) { return this.http.post<{ cleared: boolean; removed: boolean }>(`${API_URL}/attendance/manual/clear`, { userId, date }); }
+  manual(body: { userId: string; date: string; status?: string; checkIn?: string | null; checkOut?: string | null; sessions?: { in: string; out?: string | null }[]; note?: string; leaveType?: LeaveType; halfDay?: boolean }) {
     return this.http.put<AttendanceRecord>(`${API_URL}/attendance/manual`, body);
   }
 
   // --- reports (file download through the authenticated client) ---
+  hours(from: string, to: string) { return this.http.get<HoursReport>(`${API_URL}/attendance/hours`, { params: this.params({ from, to }) }); }
+  downloadHours(from: string, to: string) {
+    return this.http.get(`${API_URL}/attendance/hours.xlsx`, { params: this.params({ from, to, ...(use24h() ? {} : { timeFormat: '12' }) }), responseType: 'blob' });
+  }
   downloadReport(format: 'csv' | 'xlsx', f: ReportFilters) {
     return this.http.get(`${API_URL}/attendance/export.${format}`, {
-      params: this.params({ ...f }),
+      params: this.params({ ...f, ...(use24h() ? {} : { timeFormat: '12' }) }),
       responseType: 'blob',
     });
   }
-  reportPreview(f: ReportFilters) { return this.http.get<ReportPreview>(`${API_URL}/attendance/report`, { params: this.params({ ...f }) }); }
+  reportPreview(f: ReportFilters) { return this.http.get<ReportPreview>(`${API_URL}/attendance/report`, { params: this.params({ ...f, ...(use24h() ? {} : { timeFormat: '12' }) }) }); }
 
   // --- staff ---
   staff() { return this.http.get<StaffMember[]>(`${API_URL}/staff`); }
@@ -265,11 +384,15 @@ export class ApiService {
 
   // --- payroll (admin) ---
   // no argument = the current pay period; { month } = a pay month; { from, to } = custom dates
+  myPayroll(month?: string) { return this.http.get<MyPayroll>(`${API_URL}/payroll/my`, { params: this.params({ month }) }); }
   payroll(q: PayrollQuery = {}) { return this.http.get<Payroll>(`${API_URL}/payroll`, { params: this.params({ ...q }) }); }
-  addAdjustment(body: { user: string; date: string; type: 'earning' | 'deduction'; label: string; amount: number; note: string }) {
+  addAdjustment(body: { user: string; date?: string; month?: string; type: 'earning' | 'deduction'; label: string; amount: number; note: string }) {
     return this.http.post(`${API_URL}/adjustments`, body);
   }
   deleteAdjustment(id: string) { return this.http.delete(`${API_URL}/adjustments/${id}`); }
+  salarySummary(q: PayrollQuery = {}) { return this.http.get<SalarySummary>(`${API_URL}/payroll/summary`, { params: this.params({ ...q }) }); }
+  saveSalaryFunds(key: string, cash: number, bank: number) { return this.http.put<{ key: string; cash: number; bank: number }>(`${API_URL}/payroll/funds`, { key, cash, bank }); }
+  downloadSalarySummary(q: PayrollQuery) { return this.http.get(`${API_URL}/payroll/summary.xlsx`, { params: this.params({ ...q }), responseType: 'blob' }); }
   downloadPayroll(q: PayrollQuery, format: 'xlsx' | 'csv' = 'xlsx') {
     return this.http.get(`${API_URL}/payroll/export.${format}`, { params: this.params({ ...q }), responseType: 'blob' });
   }

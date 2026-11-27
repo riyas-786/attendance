@@ -1,7 +1,7 @@
 {
-  "name": "Teepee Group Staff Attendance",
+  "name": "TEE PEE Group Staff Attendance",
   "short_name": "Attendance",
-  "description": "Staff attendance for Teepee Group",
+  "description": "Staff attendance for TEE PEE Group",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

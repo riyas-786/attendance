@@ -1,6 +1,7 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { initials } from '../core/initials';
 import { ApiService, PayType, Shift, StaffMember, WorkLocation } from '../core/api.service';
 
 @Component({
@@ -8,25 +9,47 @@ import { ApiService, PayType, Shift, StaffMember, WorkLocation } from '../core/a
   standalone: true,
   imports: [FormsModule, DecimalPipe],
   template: `
-    <section class="card">
-      <h2>Staff</h2>
-      <table>
+    <section class="pay-page">
+      <header class="pay-head">
+        <div class="pay-title">
+          <h2>Staff</h2>
+          <div class="pay-meta"><span class="muted">Add people, set their pay, duty time and where they may check in.</span></div>
+        </div>
+        <div class="pay-downloads">
+          <a class="btn primary" href="#add-staff">Add staff member</a>
+        </div>
+      </header>
+
+      <div class="pay-stats">
+        <div class="pstat"><span>Active</span><b>{{ countBy('active') }}</b></div>
+        <div class="pstat"><span>Inactive</span><b style="color: var(--muted)">{{ staff().length - countBy('active') }}</b></div>
+        <div class="pstat"><span>Auto attendance</span><b style="color: var(--warn)">{{ countBy('auto') }}</b></div>
+        <div class="pstat net"><span>Total people</span><b>{{ staff().length }}</b></div>
+      </div>
+
+      <div class="table-wrap card">
+      <table class="plain" style="min-width:980px">
         <thead>
-          <tr><th>Name</th><th>Dept</th><th>Role</th><th>Pay</th><th>Duty time</th><th>Check-in places</th><th>Phone</th><th>Status</th><th></th></tr>
+          <tr><th>Employee</th><th>Role</th><th>Pay</th><th>Duty time</th><th>Check-in places</th><th>Phone lock</th><th>Status</th><th></th></tr>
         </thead>
         <tbody>
           @for (u of staff(); track u._id) {
-            <tr>
-              <td>{{ u.name }}<div class="muted">{{ u.email }}{{ u.employeeId ? ' · ' + u.employeeId : '' }}</div></td>
-              <td>{{ u.department || '—' }}</td>
-              <td>{{ u.role }}</td>
+            <tr [class.inactive-row]="!u.active">
               <td>
-                @if (u.baseSalary) { {{ u.baseSalary | number: '1.2-2' }}<div class="muted">{{ payUnit(u.payType) }}</div> } @else { — }
+                <div class="emp">
+                  <span class="avatar" aria-hidden="true">{{ ini(u.name) }}</span>
+                  <div class="emp-text"><b>{{ u.name }}</b><span class="muted">{{ u.department || 'No department' }}{{ u.employeeId ? ' · ' + u.employeeId : '' }}</span><span class="muted">{{ u.email }}</span></div>
+                </div>
+              </td>
+              <td><span class="badge" style="text-transform:capitalize">{{ u.role }}</span></td>
+              <td>
+                @if (u.baseSalary) { <b>{{ u.baseSalary | number: '1.2-2' }}</b><div class="muted">{{ payUnit(u.payType) }}</div> } @else { <span class="muted">—</span> }
               </td>
               <td>{{ shiftLabel(u) }}</td>
               <td>{{ placesLabel(u) }}</td>
               <td>
                 @if (u.role !== 'staff') { <span class="muted">—</span> }
+                @else if (u.autoAttendance) { <span class="badge late" title="Recorded automatically, no phone needed">Auto attendance</span> }
                 @else if (u.deviceLock === false) { <span class="muted">Not locked</span> }
                 @else if (u.hasDevice) {
                   <span class="badge present">Registered</span>
@@ -34,7 +57,7 @@ import { ApiService, PayType, Shift, StaffMember, WorkLocation } from '../core/a
                 } @else { <span class="muted">Not yet</span> }
               </td>
               <td><span class="badge" [class]="u.active ? 'present' : 'absent'">{{ u.active ? 'active' : 'inactive' }}</span></td>
-              <td>
+              <td class="row-actions">
                 <button class="btn small" (click)="startEdit(u)">Edit</button>
                 <button class="btn small" (click)="toggle(u)">{{ u.active ? 'Deactivate' : 'Activate' }}</button>
               </td>
@@ -42,50 +65,80 @@ import { ApiService, PayType, Shift, StaffMember, WorkLocation } from '../core/a
           }
         </tbody>
       </table>
-      <p class="muted">“Default” means the duty time or office from <b>Settings</b> is used.</p>
+      </div>
+      <p class="muted" style="margin:0">“Default” means the duty time or office from <b>Settings</b> is used.</p>
     </section>
 
     @if (editing(); as u) {
-      <section class="card edit-card">
-        <h3>Edit {{ u.name }}</h3>
-        <div class="grid">
-          <label>Paid by
-            <select [(ngModel)]="e.payType" name="epay">
-              <option value="monthly">Monthly salary</option>
-              <option value="daily">Per day worked</option>
-              <option value="hourly">Per hour worked</option>
-            </select>
-          </label>
-          <label>{{ payLabel(e.payType) }} <input type="number" min="0" step="0.01" [(ngModel)]="e.salary" name="esal" /></label>
-          @if (e.payType === 'monthly') {
-            <label>Monthly pay method
-              <select [(ngModel)]="e.monthlyMethod" name="emethod">
-                <option value="">Use the default (Settings)</option>
-                <option value="fixed">Fixed salary</option>
-                <option value="days">By days present</option>
+      <section class="card pay-filters edit-card">
+        <div class="emp" style="margin-bottom:16px"><span class="avatar" aria-hidden="true">{{ ini(u.name) }}</span><h3 style="margin:0">Edit {{ u.name }}</h3></div>
+        <div class="group">
+          <p class="group-title">Pay</p>
+          <div class="grid">
+            <label>Paid by
+              <select [(ngModel)]="e.payType" name="epay">
+                <option value="monthly">Monthly salary</option>
+                <option value="daily">Per day worked</option>
+                <option value="hourly">Per hour worked</option>
               </select>
             </label>
-          }
-          <label>Join date (optional) <input type="date" [(ngModel)]="e.joinDate" name="ejoin" /></label>
-          <label>Duty time (shift)
-            <select [(ngModel)]="e.shift" name="eshift">
-              <option value="">Default (from Settings)</option>
-              @for (s of shifts(); track s._id) { <option [value]="s._id">{{ s.name }} · starts {{ s.workStart }}</option> }
-            </select>
-          </label>
+            <label>{{ payLabel(e.payType) }} <input type="number" min="0" step="0.01" [(ngModel)]="e.salary" name="esal" /></label>
+            @if (e.payType === 'monthly') {
+              <label>Monthly pay method
+                <select [(ngModel)]="e.monthlyMethod" name="emethod">
+                  <option value="">Use the default (Settings)</option>
+                  <option value="fixed">Fixed salary</option>
+                  <option value="days">By days present</option>
+                </select>
+              </label>
+            }
+            <label>Company <input [(ngModel)]="e.company" name="ecompany" maxlength="60" placeholder="e.g. TP Group" /></label>
+            <label>Salary balance paid by
+              <select [(ngModel)]="e.salaryMode" name="emode">
+                <option value="bank">Bank</option>
+                <option value="cash">Cash</option>
+              </select>
+            </label>
+          </div>
         </div>
 
-        <div style="margin-top:12px">
-          <label class="check"><input type="checkbox" [(ngModel)]="e.deviceLock" name="edev" /> Lock to one phone or browser (stops someone else signing in as this person from their own phone)</label>
+        @if (u.role === 'accountant') {
+          <div class="group">
+            <div class="perm-box">
+              <b>Accountant permissions</b>
+              <span class="muted"> Changes apply the next time they open the app.</span>
+              @for (p of permissionOptions; track p.key) {
+                <label class="check"><input type="checkbox" [name]="'eperm-' + p.key" [ngModel]="e.permissions.includes(p.key)" (ngModelChange)="e.permissions = togglePerm(e.permissions, p.key)" /> {{ p.label }}</label>
+              }
+            </div>
+          </div>
+        }
+
+        <div class="group">
+          <p class="group-title">Work</p>
+          <div class="grid">
+            <label>Join date (optional) <input type="date" [(ngModel)]="e.joinDate" name="ejoin" /></label>
+            <label>Duty time (shift)
+              <select [(ngModel)]="e.shift" name="eshift">
+                <option value="">Default (from Settings)</option>
+                @for (s of shifts(); track s._id) { <option [value]="s._id">{{ s.name }} · starts {{ s.workStart }}</option> }
+              </select>
+            </label>
+            <label>WhatsApp number <input type="tel" [(ngModel)]="e.phone" name="ephone" placeholder="country code + number, e.g. 919876543210" /></label>
+          </div>
+          <div style="margin-top:12px">
+            <label class="check"><input type="checkbox" [(ngModel)]="e.autoAttendance" name="eauto" /> Auto attendance (no smartphone): recorded present for their shift every working day. Mark leave or absence on the Overview for the days they do not come.</label>
+            <label class="check"><input type="checkbox" [(ngModel)]="e.deviceLock" name="edev" /> Lock to one phone or browser (stops someone else signing in as this person from their own phone)</label>
+          </div>
         </div>
 
-        <div style="margin-top:12px">
-          <b>Where can they check in?</b>
+        <div class="group">
+          <p class="group-title">Where can they check in?</p>
           <label class="check"><input type="checkbox" [(ngModel)]="e.anyLocation" name="eany" /> Anywhere (field or remote staff, no location check)</label>
           @if (!e.anyLocation) {
             <div class="days">
               @for (l of locations(); track l._id) {
-                <label class="check pill">
+                <label class="pill-check">
                   <input type="checkbox" [checked]="e.locations.includes(l._id)" (change)="toggleLocation(l._id)" [name]="'loc' + l._id" />
                   {{ l.name }}
                 </label>
@@ -105,7 +158,7 @@ import { ApiService, PayType, Shift, StaffMember, WorkLocation } from '../core/a
       </section>
     }
 
-    <section class="card">
+    <section class="card pay-filters" id="add-staff" style="margin-top:18px">
       <h3>Add staff member</h3>
       <form class="grid" (ngSubmit)="add()">
         <input name="name" placeholder="Full name" [(ngModel)]="form.name" required />
@@ -113,6 +166,12 @@ import { ApiService, PayType, Shift, StaffMember, WorkLocation } from '../core/a
         <input name="password" type="password" placeholder="Temporary password (min 6)" [(ngModel)]="form.password" required minlength="6" />
         <input name="employeeId" placeholder="Employee ID" [(ngModel)]="form.employeeId" />
         <input name="department" placeholder="Department" [(ngModel)]="form.department" />
+        <input name="phone" type="tel" placeholder="WhatsApp number with country code (e.g. 919876543210)" [(ngModel)]="form.phone" />
+        <input name="company" placeholder="Company (e.g. TP Group)" [(ngModel)]="form.company" maxlength="60" />
+        <select name="salaryMode" [(ngModel)]="form.salaryMode">
+          <option value="bank">Salary paid by bank</option>
+          <option value="cash">Salary paid in cash</option>
+        </select>
         <select name="payType" [(ngModel)]="form.payType">
           <option value="monthly">Paid monthly</option>
           <option value="daily">Paid per day</option>
@@ -123,7 +182,18 @@ import { ApiService, PayType, Shift, StaffMember, WorkLocation } from '../core/a
         <select name="role" [(ngModel)]="form.role">
           <option value="staff">Staff</option>
           <option value="admin">Admin</option>
+          <option value="owner">Owner (view attendance only)</option>
+          <option value="accountant">Accountant (you choose what they can use)</option>
         </select>
+        @if (form.role === 'accountant') {
+          <div class="perm-box" style="grid-column: 1 / -1">
+            <b>Accountant permissions</b>
+            <span class="muted"> Tick what this accountant may use. Nothing else is visible to them.</span>
+            @for (p of permissionOptions; track p.key) {
+              <label class="check"><input type="checkbox" [name]="'perm-' + p.key" [ngModel]="form.permissions.includes(p.key)" (ngModelChange)="form.permissions = togglePerm(form.permissions, p.key)" /> {{ p.label }}</label>
+            }
+          </div>
+        }
         <button class="btn primary" type="submit">Add</button>
       </form>
       <p class="muted">After adding, click <b>Edit</b> on the new person to set their duty time and check-in places.</p>
@@ -133,18 +203,40 @@ import { ApiService, PayType, Shift, StaffMember, WorkLocation } from '../core/a
 })
 export class StaffComponent implements OnInit {
   private api = inject(ApiService);
+  ini = initials;
   staff = signal<StaffMember[]>([]);
   shifts = signal<Shift[]>([]);
   locations = signal<WorkLocation[]>([]);
   msg = signal('');
   editMsg = signal('');
   editing = signal<StaffMember | null>(null);
-  e = { monthlyMethod: '' as '' | 'fixed' | 'days', payType: 'monthly' as PayType, salary: 0 as number | null, joinDate: '', shift: '', anyLocation: false, locations: [] as string[], deviceLock: true };
+  e = { phone: '', permissions: [] as string[], company: '', salaryMode: 'bank' as 'bank' | 'cash', monthlyMethod: '' as '' | 'fixed' | 'days', payType: 'monthly' as PayType, salary: 0 as number | null, joinDate: '', shift: '', anyLocation: false, locations: [] as string[], deviceLock: true, autoAttendance: false };
+
+  // What the admin can allow an accountant to use
+  permissionOptions = [
+    { key: 'attendance_view', label: 'Attendance overview (view only)' },
+    { key: 'attendance_edit', label: 'Attendance: mark leave / absence, half days, accept or reject weekend OT' },
+    { key: 'reports', label: 'Reports (view and download)' },
+    { key: 'payroll_view', label: 'Payroll (view, download, salary slips)' },
+    { key: 'payroll_edit', label: 'Payroll: add or remove extra earnings and deductions' },
+    { key: 'salary_summary', label: 'Salary summary' },
+    { key: 'leaves', label: 'Leave requests (approve / reject)' },
+  ];
+  // editing needs viewing: ticking an edit option ticks its view option, and unticking view unticks edit
+  togglePerm(list: string[], key: string): string[] {
+    const on = list.includes(key);
+    let next = on ? list.filter((x) => x !== key) : [...list, key];
+    if (!on && key === 'attendance_edit' && !next.includes('attendance_view')) next.push('attendance_view');
+    if (!on && key === 'payroll_edit' && !next.includes('payroll_view')) next.push('payroll_view');
+    if (on && key === 'attendance_view') next = next.filter((x) => x !== 'attendance_edit');
+    if (on && key === 'payroll_view') next = next.filter((x) => x !== 'payroll_edit');
+    return next;
+  }
 
   private blank() {
     return {
-      name: '', email: '', password: '', employeeId: '', department: '',
-      role: 'staff' as 'staff' | 'admin', payType: 'monthly' as PayType, baseSalary: null as number | null, joinDate: '',
+      name: '', email: '', password: '', employeeId: '', department: '', phone: '',
+      role: 'staff' as 'staff' | 'admin' | 'owner' | 'accountant', permissions: [] as string[], company: '', salaryMode: 'bank' as 'bank' | 'cash', payType: 'monthly' as PayType, baseSalary: null as number | null, joinDate: '',
     };
   }
   form = this.blank();
@@ -155,6 +247,10 @@ export class StaffComponent implements OnInit {
     this.api.locations().subscribe((l) => this.locations.set(l));
   }
   load() { this.api.staff().subscribe((s) => this.staff.set(s)); }
+
+  countBy(k: 'active' | 'auto') {
+    return this.staff().filter((u) => (k === 'active' ? u.active : !!u.autoAttendance)).length;
+  }
 
   shiftLabel(u: StaffMember) {
     if (!u.shift) return 'Default';
@@ -184,6 +280,10 @@ export class StaffComponent implements OnInit {
     this.editMsg.set('');
     this.editing.set(u);
     this.e = {
+      phone: u.phone || '',
+      permissions: [...(u.permissions ?? [])],
+      company: u.company || '',
+      salaryMode: u.salaryMode === 'cash' ? 'cash' : 'bank',
       monthlyMethod: u.monthlyMethod || '',
       payType: u.payType || 'monthly',
       salary: u.baseSalary ?? 0,
@@ -192,6 +292,7 @@ export class StaffComponent implements OnInit {
       anyLocation: !!u.anyLocation,
       locations: [...(u.locations || [])],
       deviceLock: u.deviceLock !== false,
+      autoAttendance: !!u.autoAttendance,
     };
   }
 
@@ -203,11 +304,16 @@ export class StaffComponent implements OnInit {
     this.api
       .updateStaff(u._id, {
         payType: this.e.payType,
+        phone: this.e.phone.trim(),
+        ...(u.role === 'accountant' ? { permissions: this.e.permissions } : {}),
+        company: this.e.company.trim(),
+        salaryMode: this.e.salaryMode,
         monthlyMethod: this.e.monthlyMethod,
         baseSalary: this.e.salary ?? 0,
         joinDate: this.e.joinDate,
         shift: this.e.shift || null,
         deviceLock: this.e.deviceLock,
+        autoAttendance: this.e.autoAttendance,
         anyLocation: this.e.anyLocation,
         locations: this.e.anyLocation ? [] : this.e.locations,
       })

@@ -16,10 +16,30 @@ export const adminGuard: CanActivateFn = (_route, state) => {
   return auth.isAdmin() ? true : router.createUrlTree(['/']);
 };
 
+// Admin pages that an accountant may use when the admin ticked the matching permission (route data: { perms: [...] })
+export const permGuard: CanActivateFn = (route, state) => {
+  const auth = inject(AuthService);
+  const router = inject(Router);
+  if (!auth.isLoggedIn()) return router.createUrlTree(['/login'], { queryParams: { returnUrl: state.url } });
+  const perms = (route.data['perms'] as string[]) ?? [];
+  if (auth.can(...perms)) return true;
+  return router.createUrlTree([auth.isAccountant() ? auth.firstPage() : '/']);
+};
+
+// The owner's read-only attendance page
+export const ownerGuard: CanActivateFn = (_route, state) => {
+  const auth = inject(AuthService);
+  const router = inject(Router);
+  if (!auth.isLoggedIn()) return router.createUrlTree(['/login'], { queryParams: { returnUrl: state.url } });
+  return auth.isOwner() ? true : router.createUrlTree([auth.isAdmin() ? '/admin' : '/']);
+};
+
 // Pages for employees (Today, History, Leave): an admin account does not check in, so it goes to the admin Overview
 export const staffGuard: CanActivateFn = (_route, state) => {
   const auth = inject(AuthService);
   const router = inject(Router);
   if (!auth.isLoggedIn()) return router.createUrlTree(['/login'], { queryParams: { returnUrl: state.url } });
+  if (auth.isOwner()) return router.createUrlTree(['/owner']);
+  if (auth.isAccountant()) return router.createUrlTree([auth.firstPage()]);
   return auth.isAdmin() ? router.createUrlTree(['/admin']) : true;
 };

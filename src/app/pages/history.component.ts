@@ -1,5 +1,6 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
-import { DatePipe } from '@angular/common';
+import { TimeFormat } from '../core/time-format';
+import { ClockPipe } from '../core/clock.pipe';
 import { FormsModule } from '@angular/forms';
 import { ApiService, AttendanceRecord } from '../core/api.service';
 import { AuthService } from '../core/auth.service';
@@ -9,7 +10,7 @@ import { dayImage, preloadShareAssets, rangeImage, shareImage } from '../core/sh
 @Component({
   selector: 'app-history',
   standalone: true,
-  imports: [DatePipe, FormsModule],
+  imports: [ClockPipe, FormsModule],
   template: `
     <section class="card">
       <h2>My attendance</h2>
@@ -32,11 +33,11 @@ import { dayImage, preloadShareAssets, rangeImage, shareImage } from '../core/sh
               <td>{{ r.date }}</td>
               <td>
                 @for (s of r.sessions ?? []; track $index) {
-                  <div>{{ s.in | date: 'HH:mm' }} – {{ s.out ? (s.out | date: 'HH:mm') : 'in' }}</div>
+                  <div>{{ s.in | clock: tf.is24() : tf.tz() }} – {{ s.out ? (s.out | clock: tf.is24() : tf.tz()) : 'in' }}</div>
                 } @empty { — }
               </td>
               <td>{{ r.workedMinutes ? (r.workedMinutes / 60).toFixed(1) : '—' }}</td>
-              <td><span class="badge" [class]="r.status">{{ r.status }}</span></td>
+              <td><span class="badge" [class]="r.status">{{ r.status }}{{ r.halfDay ? ' · ½ day' : '' }}</span></td>
               <td class="share-cell">
                 <a class="btn small whatsapp" [href]="wa(dayText(r))" target="_blank" rel="noopener">Share</a>
                 <button class="btn small whatsapp" type="button" (click)="dayPicture(r)" [disabled]="busy()">Image</button>
@@ -51,6 +52,7 @@ import { dayImage, preloadShareAssets, rangeImage, shareImage } from '../core/sh
   `,
 })
 export class HistoryComponent implements OnInit {
+  tf = inject(TimeFormat);
   private api = inject(ApiService);
   private auth = inject(AuthService);
   rows = signal<AttendanceRecord[]>([]);
@@ -59,7 +61,14 @@ export class HistoryComponent implements OnInit {
   from = '';
   to = '';
 
-  ngOnInit() { preloadShareAssets(); this.load(); }
+  ngOnInit() {
+    preloadShareAssets();
+    // start on the current pay period (Settings -> Pay period starts on day); if it cannot be loaded, show everything as before
+    this.api.payPeriod().subscribe({
+      next: (p) => { this.from = p.current.from; this.to = p.current.to; this.load(); },
+      error: () => this.load(),
+    });
+  }
 
   private async send(make: () => Promise<Blob>, fileName: string) {
     this.busy.set(true);

@@ -10,7 +10,7 @@ import { AuthService } from '../core/auth.service';
   template: `
     <div class="login-wrap">
       <form class="card login" (ngSubmit)="submit()">
-        <img class="login-mark" src="logo-mark.png" alt="Teepee Group" />
+        <img class="login-mark" src="logo-mark.png" alt="TEE PEE Group" />
         <h1>Staff Attendance</h1>
         <p class="muted">Sign in to record your attendance</p>
 
@@ -50,7 +50,7 @@ export class LoginComponent {
         if (returnUrl && returnUrl.startsWith('/') && !returnUrl.startsWith('//')) {
           this.router.navigateByUrl(returnUrl);
         } else {
-          this.router.navigate([res.user.role === 'admin' ? '/admin' : '/']);
+          this.router.navigate([this.auth.firstPage()]);
         }
       },
       error: (err) => {
