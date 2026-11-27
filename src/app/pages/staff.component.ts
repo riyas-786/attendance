@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, HostListener, OnDestroy, OnInit, inject, signal } from '@angular/core';
 import { DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { initials } from '../core/initials';
@@ -16,9 +16,11 @@ import { ApiService, PayType, Shift, StaffMember, WorkLocation } from '../core/a
           <div class="pay-meta"><span class="muted">Add people, set their pay, duty time and where they may check in.</span></div>
         </div>
         <div class="pay-downloads">
-          <a class="btn primary" href="#add-staff">Add staff member</a>
+          <button class="btn primary" type="button" (click)="openAdd()">Add staff member</button>
         </div>
       </header>
+
+      @if (msg()) { <div class="flash">{{ msg() }}</div> }
 
       <div class="pay-stats">
         <div class="pstat"><span>Active</span><b>{{ countBy('active') }}</b></div>
@@ -70,8 +72,14 @@ import { ApiService, PayType, Shift, StaffMember, WorkLocation } from '../core/a
     </section>
 
     @if (editing(); as u) {
-      <section class="card pay-filters edit-card">
-        <div class="emp" style="margin-bottom:16px"><span class="avatar" aria-hidden="true">{{ ini(u.name) }}</span><h3 style="margin:0">Edit {{ u.name }}</h3></div>
+      <div class="modal-back">
+        <div class="modal" role="dialog" aria-modal="true" aria-labelledby="edit-title">
+          <header class="modal-head">
+            <span class="avatar" aria-hidden="true">{{ ini(u.name) }}</span>
+            <div class="modal-title"><h3 id="edit-title">Edit {{ u.name }}</h3><span class="muted">{{ u.email }}</span></div>
+            <button class="icon-btn" type="button" (click)="closeEdit()" aria-label="Close" title="Close (Esc)">✕</button>
+          </header>
+          <div class="modal-body edit-card">
         <div class="group">
           <p class="group-title">Pay</p>
           <div class="grid">
@@ -150,58 +158,96 @@ import { ApiService, PayType, Shift, StaffMember, WorkLocation } from '../core/a
           }
         </div>
 
-        <div class="actions left" style="margin-top:14px">
-          <button class="btn primary" (click)="saveEdit(u)">Save</button>
-          <button class="btn" (click)="editing.set(null)">Cancel</button>
+          </div>
+          <footer class="modal-foot">
+            @if (editMsg()) { <span class="error modal-msg">{{ editMsg() }}</span> }
+            <button class="btn" type="button" (click)="closeEdit()">Cancel</button>
+            <button class="btn primary" type="button" (click)="saveEdit(u)">Save changes</button>
+          </footer>
         </div>
-        @if (editMsg()) { <div class="error">{{ editMsg() }}</div> }
-      </section>
+      </div>
     }
 
-    <section class="card pay-filters" id="add-staff" style="margin-top:18px">
-      <h3>Add staff member</h3>
-      <form class="grid" (ngSubmit)="add()">
-        <input name="name" placeholder="Full name" [(ngModel)]="form.name" required />
-        <input name="email" type="email" placeholder="Email" [(ngModel)]="form.email" required />
-        <input name="password" type="password" placeholder="Temporary password (min 6)" [(ngModel)]="form.password" required minlength="6" />
-        <input name="employeeId" placeholder="Employee ID" [(ngModel)]="form.employeeId" />
-        <input name="department" placeholder="Department" [(ngModel)]="form.department" />
-        <input name="phone" type="tel" placeholder="WhatsApp number with country code (e.g. 919876543210)" [(ngModel)]="form.phone" />
-        <input name="company" placeholder="Company (e.g. TP Group)" [(ngModel)]="form.company" maxlength="60" />
-        <select name="salaryMode" [(ngModel)]="form.salaryMode">
-          <option value="bank">Salary paid by bank</option>
-          <option value="cash">Salary paid in cash</option>
-        </select>
-        <select name="payType" [(ngModel)]="form.payType">
-          <option value="monthly">Paid monthly</option>
-          <option value="daily">Paid per day</option>
-          <option value="hourly">Paid per hour</option>
-        </select>
-        <input name="baseSalary" type="number" min="0" step="0.01" [placeholder]="payLabel(form.payType)" [(ngModel)]="form.baseSalary" />
-        <label>Join date <input name="joinDate" type="date" [(ngModel)]="form.joinDate" /></label>
-        <select name="role" [(ngModel)]="form.role">
-          <option value="staff">Staff</option>
-          <option value="admin">Admin</option>
-          <option value="owner">Owner (view attendance only)</option>
-          <option value="accountant">Accountant (you choose what they can use)</option>
-        </select>
-        @if (form.role === 'accountant') {
-          <div class="perm-box" style="grid-column: 1 / -1">
-            <b>Accountant permissions</b>
-            <span class="muted"> Tick what this accountant may use. Nothing else is visible to them.</span>
-            @for (p of permissionOptions; track p.key) {
-              <label class="check"><input type="checkbox" [name]="'perm-' + p.key" [ngModel]="form.permissions.includes(p.key)" (ngModelChange)="form.permissions = togglePerm(form.permissions, p.key)" /> {{ p.label }}</label>
+    @if (adding()) {
+      <div class="modal-back">
+        <form class="modal" role="dialog" aria-modal="true" aria-labelledby="add-title" (ngSubmit)="add()">
+          <header class="modal-head">
+            <span class="avatar" aria-hidden="true">+</span>
+            <div class="modal-title"><h3 id="add-title">Add staff member</h3><span class="muted">You can set duty time and check-in places afterwards with Edit.</span></div>
+            <button class="icon-btn" type="button" (click)="closeAdd()" aria-label="Close" title="Close (Esc)">✕</button>
+          </header>
+          <div class="modal-body edit-card">
+            <div class="group">
+              <p class="group-title">Account</p>
+              <div class="grid">
+                <label>Full name <input name="name" [(ngModel)]="form.name" required /></label>
+                <label>Email <input name="email" type="email" [(ngModel)]="form.email" required /></label>
+                <label>Temporary password <input name="password" type="password" placeholder="At least 6 characters" [(ngModel)]="form.password" required minlength="6" /></label>
+                <label>Role
+                  <select name="role" [(ngModel)]="form.role">
+                    <option value="staff">Staff</option>
+                    <option value="admin">Admin</option>
+                    <option value="owner">Owner (view attendance only)</option>
+                    <option value="accountant">Accountant (you choose what they can use)</option>
+                  </select>
+                </label>
+                <label>Employee ID <input name="employeeId" [(ngModel)]="form.employeeId" /></label>
+                <label>Department <input name="department" [(ngModel)]="form.department" /></label>
+              </div>
+            </div>
+
+            @if (form.role === 'accountant') {
+              <div class="group">
+                <div class="perm-box">
+                  <b>Accountant permissions</b>
+                  <span class="muted"> Tick what this accountant may use. Nothing else is visible to them.</span>
+                  @for (p of permissionOptions; track p.key) {
+                    <label class="check"><input type="checkbox" [name]="'perm-' + p.key" [ngModel]="form.permissions.includes(p.key)" (ngModelChange)="form.permissions = togglePerm(form.permissions, p.key)" /> {{ p.label }}</label>
+                  }
+                </div>
+              </div>
             }
+
+            <div class="group">
+              <p class="group-title">Pay</p>
+              <div class="grid">
+                <label>Paid by
+                  <select name="payType" [(ngModel)]="form.payType">
+                    <option value="monthly">Paid monthly</option>
+                    <option value="daily">Paid per day</option>
+                    <option value="hourly">Paid per hour</option>
+                  </select>
+                </label>
+                <label>{{ payLabel(form.payType) }} <input name="baseSalary" type="number" min="0" step="0.01" [(ngModel)]="form.baseSalary" /></label>
+                <label>Salary paid by
+                  <select name="salaryMode" [(ngModel)]="form.salaryMode">
+                    <option value="bank">Bank</option>
+                    <option value="cash">Cash</option>
+                  </select>
+                </label>
+                <label>Company <input name="company" maxlength="60" placeholder="e.g. TP Group" [(ngModel)]="form.company" /></label>
+              </div>
+            </div>
+
+            <div class="group">
+              <p class="group-title">Contact and joining</p>
+              <div class="grid">
+                <label>WhatsApp number <input name="phone" type="tel" placeholder="country code + number, e.g. 919876543210" [(ngModel)]="form.phone" /></label>
+                <label>Join date <input name="joinDate" type="date" [(ngModel)]="form.joinDate" /></label>
+              </div>
+            </div>
           </div>
-        }
-        <button class="btn primary" type="submit">Add</button>
-      </form>
-      <p class="muted">After adding, click <b>Edit</b> on the new person to set their duty time and check-in places.</p>
-      @if (msg()) { <div class="muted">{{ msg() }}</div> }
-    </section>
+          <footer class="modal-foot">
+            @if (addErr()) { <span class="error modal-msg">{{ addErr() }}</span> }
+            <button class="btn" type="button" (click)="closeAdd()">Cancel</button>
+            <button class="btn primary" type="submit">Add staff member</button>
+          </footer>
+        </form>
+      </div>
+    }
   `,
 })
-export class StaffComponent implements OnInit {
+export class StaffComponent implements OnInit, OnDestroy {
   private api = inject(ApiService);
   ini = initials;
   staff = signal<StaffMember[]>([]);
@@ -209,6 +255,8 @@ export class StaffComponent implements OnInit {
   locations = signal<WorkLocation[]>([]);
   msg = signal('');
   editMsg = signal('');
+  adding = signal(false);
+  addErr = signal('');
   editing = signal<StaffMember | null>(null);
   e = { phone: '', permissions: [] as string[], company: '', salaryMode: 'bank' as 'bank' | 'cash', monthlyMethod: '' as '' | 'fixed' | 'days', payType: 'monthly' as PayType, salary: 0 as number | null, joinDate: '', shift: '', anyLocation: false, locations: [] as string[], deviceLock: true, autoAttendance: false };
 
@@ -241,6 +289,22 @@ export class StaffComponent implements OnInit {
   }
   form = this.blank();
 
+  // Esc closes the popup; the page behind it does not scroll while it is open
+  @HostListener('document:keydown.escape')
+  onEscape() { if (this.editing()) this.closeEdit(); else if (this.adding()) this.closeAdd(); }
+  private lock(on: boolean) { document.body.classList.toggle('modal-open', on); }
+  ngOnDestroy() { this.lock(false); }
+
+  openAdd() {
+    this.form = this.blank();
+    this.addErr.set('');
+    this.msg.set('');
+    this.adding.set(true);
+    this.lock(true);
+  }
+  closeAdd() { this.adding.set(false); this.lock(false); }
+  closeEdit() { this.editing.set(null); this.lock(false); }
+
   ngOnInit() {
     this.load();
     this.api.shifts().subscribe((s) => this.shifts.set(s));
@@ -268,17 +332,19 @@ export class StaffComponent implements OnInit {
     const { baseSalary, ...rest } = this.form;
     this.api.addStaff({ ...rest, ...(baseSalary !== null ? { baseSalary } : {}) }).subscribe({
       next: () => {
-        this.msg.set('Staff member added');
-        this.form = this.blank();
+        this.closeAdd();
+        this.msg.set('Staff member added. Click Edit on the new person to set their duty time and check-in places.');
         this.load();
       },
-      error: (e) => this.msg.set(e.error?.message || 'Could not add staff member'),
+      error: (e) => this.addErr.set(e.error?.message || 'Could not add staff member'),
     });
   }
 
   startEdit(u: StaffMember) {
     this.editMsg.set('');
+    this.msg.set('');
     this.editing.set(u);
+    this.lock(true);
     this.e = {
       phone: u.phone || '',
       permissions: [...(u.permissions ?? [])],
@@ -318,7 +384,7 @@ export class StaffComponent implements OnInit {
         locations: this.e.anyLocation ? [] : this.e.locations,
       })
       .subscribe({
-        next: () => { this.editing.set(null); this.load(); },
+        next: () => { this.closeEdit(); this.msg.set('Saved'); this.load(); },
         error: (err) => this.editMsg.set(err.error?.message || 'Could not save'),
       });
   }

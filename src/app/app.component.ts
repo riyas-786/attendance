@@ -23,6 +23,7 @@ const ICONS: Record<string, string> = {
   settings: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z',
   menu: 'M3 12h18 M3 6h18 M3 18h18',
   close: 'M18 6L6 18 M6 6l12 12',
+  collapse: 'M11 17l-5-5 5-5 M18 17l-5-5 5-5',
   moon: 'M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z',
   sun: 'M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10z M12 1v2 M12 21v2 M4.22 4.22l1.42 1.42 M18.36 18.36l1.42 1.42 M1 12h2 M21 12h2 M4.22 19.78l1.42-1.42 M18.36 5.64l1.42-1.42',
   logout: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4 M16 17l5-5-5-5 M21 12H9',
@@ -33,7 +34,7 @@ const ICONS: Record<string, string> = {
   standalone: true,
   imports: [RouterOutlet, RouterLink, RouterLinkActive],
   template: `
-    <div class="shell" [class.with-sidebar]="auth.isLoggedIn() && sidebar()" [class.has-tabbar]="auth.isLoggedIn() && !sidebar()">
+    <div class="shell" [class.with-sidebar]="auth.isLoggedIn() && sidebar()" [class.side-collapsed]="collapsed()" [class.has-tabbar]="auth.isLoggedIn() && !sidebar()">
 
       <!-- admin and accountant: menu on the left (a slide-in drawer on phones) -->
       @if (auth.isLoggedIn() && sidebar()) {
@@ -42,6 +43,9 @@ const ICONS: Record<string, string> = {
           <div class="side-brand">
             <img class="brand-logo" src="logo-mark.png" alt="" />
             <div class="side-name"><strong>{{ company }}</strong><span>Attendance</span></div>
+            <button class="icon-btn side-collapse" type="button" (click)="setCollapsed(true)" aria-label="Hide menu" title="Hide menu">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path [attr.d]="icons['collapse']" /></svg>
+            </button>
             <button class="icon-btn side-close" type="button" (click)="open.set(false)" aria-label="Close menu">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path [attr.d]="icons['close']" /></svg>
             </button>
@@ -64,7 +68,7 @@ const ICONS: Record<string, string> = {
         @if (auth.isLoggedIn()) {
           <header class="topbar">
             @if (sidebar()) {
-              <button class="icon-btn menu-btn" type="button" (click)="open.set(true)" aria-label="Open menu">
+              <button class="icon-btn menu-btn" type="button" (click)="openMenu()" aria-label="Open menu" title="Show menu">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path [attr.d]="icons['menu']" /></svg>
               </button>
               <h1 class="top-title">{{ title() }}</h1>
@@ -113,6 +117,20 @@ export class AppComponent {
   company = COMPANY_NAME;
   icons = ICONS;
   open = signal(false); // the menu drawer on phones
+  // computer: the left menu can be hidden to give the tables more room (remembered on this browser)
+  collapsed = signal(this.savedCollapsed());
+  private savedCollapsed() {
+    try { return localStorage.getItem('sidebarCollapsed') === '1'; } catch { return false; }
+  }
+  setCollapsed(v: boolean) {
+    this.collapsed.set(v);
+    try { localStorage.setItem('sidebarCollapsed', v ? '1' : '0'); } catch { /* private mode: just not remembered */ }
+  }
+  // the menu button: on a computer it brings the left menu back, on a phone it slides the drawer in
+  openMenu() {
+    if (window.innerWidth >= 960) this.setCollapsed(false);
+    else this.open.set(true);
+  }
   private url = signal(this.router.url);
 
   // admin and accountant get the side menu; staff and owner get the simple top / bottom tabs
